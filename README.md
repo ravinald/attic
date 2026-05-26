@@ -89,8 +89,12 @@ attic clone git@github.com:ravinald/myrepo-attic.git
 | `attic rm <path>... [--delete]` | Stop tracking; `--delete` also removes the file. |
 | `attic commit -m <msg>` | Commit staged overlay changes. |
 | `attic status` `push` `pull` `fetch` `log` `diff` | Pass-through to git. |
+| `attic sync [--strategy=rebase\|merge]` | Fetch + integrate + push. Refuses on dirty work tree. |
 | `attic ls` | List paths tracked in the overlay. |
+| `attic list [--fetch] [--wide] [--json]` | Show every overlay on this machine with label, fp, sync state. |
 | `attic where [--fp]` | Print bare path, fingerprint, remote. |
+| `attic label get` / `attic label set <name>` | Read or set the current overlay's human label. |
+| `attic labels push` / `attic labels pull` | Sync the host-id → label mapping across machines via the mono remote. |
 | `attic exec -- <git-args>` | Run any git command against the overlay. |
 | `attic version` | Version, commit, build date. |
 
