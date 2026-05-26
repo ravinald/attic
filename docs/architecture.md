@@ -44,6 +44,33 @@ Pro: one repo to bootstrap, one URL to remember. Branch names are SHAs so no pro
 
 In mono mode, `init` configures `push.default = current` and `push.autoSetupRemote = true` so plain `attic push` always routes to the matching branch and creates it on first push.
 
+### Labels on the mono remote
+
+`attic` reserves a single orphan branch on the mono remote, `_attic/labels`, carrying one TOML file:
+
+```
+_attic/labels
+  labels.toml
+```
+
+Format:
+
+```toml
+[hosts.a49bee3fa207]
+label = "wifimgr"
+
+[hosts.7c4696d0cdcf]
+label = "netbox"
+```
+
+The `_attic/` prefix segregates the file from the `host/<fp>` overlay branches and from anything you might create by hand. `attic labels push` reads the local `Label` field from every `meta.toml` pointing at this remote, merges with what's already published, and force-creates a commit on `_attic/labels`. `attic labels pull` does the reverse and updates each local overlay whose fingerprint matches an entry. The branch is optional — local `meta.toml` always wins for the machine you're on, and `attic list` works fine without it.
+
+### Multiple machines, same host repo
+
+A host repo cloned on two machines has the same root commit, the same fingerprint, and therefore the **same** `host/<fp>` branch on the mono remote. There is no per-machine branch. Day-to-day this is just normal git collaboration on one branch — push from work, pull on home, commit, push back.
+
+Use `attic sync` for the steady-state loop (`fetch` + `rebase` + `push`, refuses dirty work tree). For the trickier first-time case where both machines already have a populated overlay path *before* either has pushed, see [two-machine-bootstrap.md](two-machine-bootstrap.md).
+
 ## The `.gitignore` contract
 
 When you `attic add <path>`, the path enters a marker-delimited block in the **host repo's** `.gitignore`:

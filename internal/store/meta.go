@@ -14,11 +14,20 @@ type Meta struct {
 	Fingerprint string    `toml:"fingerprint"`
 	HostRoot    string    `toml:"host_root"`
 	HostName    string    `toml:"host_name"`
+	Label       string    `toml:"label,omitempty"` // user-editable display name; falls back to HostName
 	OriginURL   string    `toml:"origin_url,omitempty"`
 	Remote      string    `toml:"remote,omitempty"`
 	Branch      string    `toml:"branch,omitempty"` // "main" for per-repo, "host/<fp>" for mono
 	Mono        bool      `toml:"mono,omitempty"`   // true if remote is a shared mono repo
 	CreatedAt   time.Time `toml:"created_at"`
+}
+
+// DisplayLabel returns the user-set Label, or HostName as a fallback.
+func (m Meta) DisplayLabel() string {
+	if m.Label != "" {
+		return m.Label
+	}
+	return m.HostName
 }
 
 // LoadMeta reads meta.toml from the per-repo storage dir.
@@ -32,6 +41,35 @@ func LoadMeta(fp string) (Meta, error) {
 		return m, fmt.Errorf("store: load meta %s: %w", p, err)
 	}
 	return m, nil
+}
+
+// EnumerateMetas scans ~/.local/share/attic/repos/ and returns one Meta per readable meta.toml.
+// Unreadable or malformed entries are skipped silently — a single corrupt overlay must not break listing.
+func EnumerateMetas() ([]Meta, error) {
+	base, err := DataHome()
+	if err != nil {
+		return nil, err
+	}
+	reposDir := filepath.Join(base, "repos")
+	entries, err := os.ReadDir(reposDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("store: read repos dir %s: %w", reposDir, err)
+	}
+	out := make([]Meta, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		m, err := LoadMeta(e.Name())
+		if err != nil {
+			continue
+		}
+		out = append(out, m)
+	}
+	return out, nil
 }
 
 // SaveMeta writes meta.toml atomically.
