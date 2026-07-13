@@ -22,9 +22,13 @@ The host repo on this machine has a fingerprint that doesn't exist on the mono r
 
 Two machines pushed to the same `host/<fp>` branch without one pulling first. Standard git: `attic pull`, resolve any conflicts, `attic push` again.
 
+## An overlay path keeps showing up staged in the host repo
+
+A `.gitignore` rule can't untrack a path already in the host index or stop a `git add -f`, so once an overlay path lands in the host index (a stray force-add, a headless script, a pre-`attic` commit) it sticks and every commit trips the guard. Run `attic eject` from the host repo — it evicts every managed path from the host index while leaving the working-tree files and overlay history untouched. `attic eject --check` reports without changing anything; wire it into a pre-commit hook to catch the regression early.
+
 ## I committed an overlay path to the host repo by accident
 
-Remove it from the host upstream (`git rm --cached path && git commit && git push`). The marker block in `.gitignore` exists precisely to prevent this — check it's intact and contains the path.
+Remove it from the host upstream (`git rm --cached path && git commit && git push`), then `attic eject` to keep the index clean going forward. The marker block in `.gitignore` plus `attic add`'s host-index eviction exist precisely to prevent this — check the block is intact and contains the path.
 
 ## I want to remove an overlay entirely
 
