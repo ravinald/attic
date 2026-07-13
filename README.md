@@ -98,6 +98,48 @@ attic clone git@github.com:ravinald/myrepo-attic.git
 | `attic exec -- <git-args>` | Run any git command against the overlay. |
 | `attic version` | Version, commit, build date. |
 
+## Labels: naming your overlays
+
+An overlay's identity is the host repo's root-commit SHA — stable, but unreadable. On the mono remote every project is a branch named `host/<fingerprint>`:
+
+```
+host/8b88ecad3aa9
+host/3f2a9c1d5e7b
+host/a1b2c3d4e5f6
+```
+
+Nothing there tells you which branch is `wifimgr` and which is `attic`. A **label** is a fingerprint → human-name mapping that makes the listing legible without changing where anything is stored.
+
+```sh
+cd ~/git/wifimgr
+attic label set wifimgr
+attic label get              # -> wifimgr (falls back to the repo basename if unset)
+```
+
+`attic list` then reads by name instead of by SHA:
+
+```
+LABEL     FP            HOST ROOT                BRANCH             SYNC
+wifimgr   8b88ecad3aa9  /Users/you/git/wifimgr   host/8b88ecad3aa9  clean
+attic     3f2a9c1d5e7b  /Users/you/git/attic     host/3f2a9c1d5e7b  ↑1 ↓0
+```
+
+Labels live in each overlay's local `meta.toml`, so they don't travel with the overlay's files. Sync them across machines over the mono remote's `_attic/labels` branch, which holds a single flat `labels.toml` map:
+
+```sh
+attic labels push            # publish this machine's fp -> label map
+attic labels pull            # on another machine, apply the published names
+```
+
+Two caveats worth knowing:
+
+- Labels **don't rename the `host/<fp>` branches** on the remote. The fingerprint stays the branch name — it's the stable, per-clone identity; a label is mutable and per-user, so it'd be a poor branch name. To decode branches from the GitHub UI, read `labels.toml` on the `_attic/labels` branch — that file *is* the SHA → name key.
+- Labels sync is **mono-mode only**. Per-host remotes have nothing shared to publish the map to.
+
+## Guardrails on the mono remote
+
+A mono remote is an overlay store, not a repo you open PRs against — every `host/<fp>` branch is an independent orphan history, and merging one into another corrupts a repo's overlay. Drop-in guards (an auto-close-PR Action, a ruleset that blocks the merge button, and surface-reduction settings) live in [`docs/mono-remote-guardrails.md`](docs/mono-remote-guardrails.md), with copy-paste templates under [`examples/mono-remote/`](examples/mono-remote/).
+
 ## The `.gitignore` contract
 
 `attic add` writes (and `attic rm` removes) entries inside a clearly-attributed block:
