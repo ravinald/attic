@@ -138,7 +138,7 @@ Two caveats worth knowing:
 
 ## Guardrails on the mono remote
 
-A mono remote is an overlay store, not a repo you open PRs against — every `host/<fp>` branch is an independent orphan history, and merging one into another corrupts a repo's overlay. Drop-in guards (an auto-close-PR Action, a ruleset that blocks the merge button, and surface-reduction settings) live in [`docs/mono-remote-guardrails.md`](docs/mono-remote-guardrails.md), with copy-paste templates under [`examples/mono-remote/`](examples/mono-remote/).
+A mono remote is an overlay store, not a repo you open PRs against — every `host/<fp>` branch is an independent orphan history, and merging one into another corrupts a repo's overlay. The enforcement is an auto-close-PR Action (a merge-blocking ruleset can't work here — it also blocks `attic push`); see [`docs/mono-remote-guardrails.md`](docs/mono-remote-guardrails.md) for the reasoning and surface-reduction settings, with copy-paste templates under [`examples/mono-remote/`](examples/mono-remote/).
 
 ## The `.gitignore` contract
 

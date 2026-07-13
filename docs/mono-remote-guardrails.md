@@ -32,36 +32,29 @@ cp -r /path/to/attic/examples/mono-remote/.github/. .github/
 git add .github && git commit -m "guard: block overlay PRs" && git push
 ```
 
-This covers ~90% of the risk and cannot interfere with attic.
+This is the enforcement — the only mechanism that blocks merges without touching `attic
+push`. The surface-reduction settings below are hygiene on top of it.
 
-## Layer 2 — ruleset that reddens the merge button
+## Why not a branch-protection ruleset?
 
-A repository **ruleset** targeting **All branches** with a single **Require status checks**
-rule naming a check that no workflow ever reports (e.g. `overlays-never-merge`), and an
-**empty bypass list**. No PR ever goes green, so the merge button stays blocked — even for
-you. "Require status checks" gates merges, not direct pushes, so `attic push` keeps working.
+A ruleset that "requires a status check that never passes" looks like it would redden the
+merge button. It doesn't work for attic, for two independent reasons:
 
-Do **not** add "Require a pull request before merging" — that rule blocks direct pushes and
-breaks attic.
+- **Rulesets and branch protection need GitHub Pro on private repos.** The mono remote is
+  private by design; on a Free personal account, `POST /rulesets` returns
+  `403 Upgrade to GitHub Pro or make this repository public`.
+- **A ruleset gates every ref update, not just merges.** With a `required_status_checks`
+  rule active on all branches, a plain `attic push` to `host/<fp>` is *rejected*
+  (`GH013 ... Required status check ... push declined`). GitHub can't distinguish a PR
+  merge from a direct push — both are ref updates to the same branch. So any ruleset
+  strong enough to block the merge also bricks `attic push`.
 
-The empty bypass list is the point: the admin (you) is exactly who this blocks.
+Only the **Layer 1 Action** distinguishes them: it keys on the `pull_request` event, not on
+the ref update, so it closes PRs while leaving pushes untouched. That's why the Action —
+not a ruleset — is the enforcement here. (Verified empirically; see the internal design
+note for the spike.)
 
-> Provisioning this ruleset from attic (`attic guard apply`) is designed but unbuilt —
-> see the internal design note. Until then, apply it once by hand in
-> **Settings → Rules → Rulesets**, or via `gh api`.
-
-After applying, verify attic still works:
-
-```sh
-cd ~/git/<any-tracked-repo>
-attic status && echo "test" >> docs-internal/scratch && attic add docs-internal/scratch
-attic commit -m "guard smoke test" && attic push   # must succeed
-```
-
-If the push is rejected, the ruleset is gating direct updates — remove "Require a pull
-request before merging" (or the whole ruleset) and rely on Layer 1.
-
-## Layer 3 — shrink the surface
+## Layer 2 — shrink the surface
 
 - **Default branch = an inert orphan `main`** holding only a `README.md` that says
   "attic overlay store — branches are `host/<fp>`, never PR." GitHub's *Compare & pull
