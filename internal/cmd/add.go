@@ -35,6 +35,12 @@ var addCmd = &cobra.Command{
 		if err := repo.Stream(gitArgs...); err != nil {
 			return err
 		}
+
+		// The overlay owns these paths now; evict any copy the host index still tracks so a
+		// prior force-add or a pre-ignore `git add -A` can't carry them into host history.
+		if err := ejectFromHost(hr, rels); err != nil {
+			return err
+		}
 		return nil
 	},
 }

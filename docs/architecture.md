@@ -86,6 +86,14 @@ This guards against the overlay path accidentally leaking into the upstream hist
 
 Because the path is now gitignored, `git add` would refuse to track it. `attic add` runs `git add --force` against the overlay — the force is intentional: gitignored upstream **and** tracked in the overlay is the design.
 
+### Keeping the host index clean
+
+The `.gitignore` block is necessary but not sufficient: git only ignores *untracked* paths, so a rule can neither untrack a path already in the host index nor stop a `git add -f`. If a path was force-added or committed to the host before attic adopted it, the block is inert and the path stays staged upstream — the pre-commit guard then refuses every commit until it's cleared.
+
+So adoption also evicts. `attic add` runs `git rm --cached --ignore-unmatch` against the **host** repo for each adopted path (via `git -C <host-root>`, worktree-safe). `--cached` leaves the working-tree files in place — the overlay still owns them — while removing them from the host index. `attic clone` does the same after checkout so a second machine's restored files land ignored, not staged.
+
+`attic eject` repairs an already-contaminated repo: it evicts every managed path (the union of the ignore-block entries and the overlay's tracked files) from the host index. `attic eject --check` reports without changing anything, exiting non-zero when a managed path is staged as a host addition — the form a pre-commit guard calls.
+
 ## Host repo identity (root commit SHA)
 
 Every git repo has at least one root commit (a commit with no parents). For a normal linear repo there's exactly one, and it's the same on every clone. `attic` keys overlay storage off this:
@@ -115,10 +123,10 @@ cmd/attic/main.go                 # entry, calls cmd.Execute
 internal/cmd/                     # cobra commands, one file per command
   root.go                         # root command + Execute()
   init.go clone.go                # state-creating
-  add.go rm.go                    # gitignore-block-aware
+  add.go rm.go eject.go           # gitignore-block-aware; eject clears the host index
   commit.go ls.go where.go exec.go
   passthrough.go                  # status/push/pull/fetch/log/diff
-  version.go common.go
+  version.go common.go            # host-git helpers: hostGit, ejectFromHost, topLevels
 internal/host/detect.go           # find host root, root commit SHA, origin URL; symlink-canonical
 internal/store/                   # XDG-aware paths + meta.toml
 internal/gitwrap/git.go           # exec git with --git-dir/--work-tree (skipped when empty)
