@@ -3,7 +3,9 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/ravinald/attic/internal/gitwrap"
@@ -42,6 +44,57 @@ func openOverlay() (host.Repo, gitwrap.Repo, error) {
 // gitignorePath returns the absolute path to the host repo's .gitignore.
 func gitignorePath(hr host.Repo) string {
 	return filepath.Join(hr.Root, ".gitignore")
+}
+
+// hostGit runs a git subcommand against the host repo itself, not the overlay. It uses
+// -C rather than a hardcoded --git-dir so git's own discovery stays correct when .git is
+// a file (linked worktrees) or core.hooksPath/GIT_DIR is customised. Stderr passes
+// through so git's diagnostics reach the user, matching gitwrap.
+func hostGit(hostRoot string, args ...string) (string, error) {
+	c := exec.Command("git", append([]string{"-C", hostRoot}, args...)...)
+	c.Stderr = os.Stderr
+	out, err := c.Output()
+	if err != nil {
+		return string(out), fmt.Errorf("host git %s: %w", strings.Join(args, " "), err)
+	}
+	return string(out), nil
+}
+
+// ejectFromHost removes rels from the HOST repo's index so an overlay-managed path stops
+// being tracked or staged upstream. A .gitignore rule cannot untrack a path already in
+// the index nor stop a `git add -f`, so eviction has to be explicit. --cached leaves the
+// working-tree files in place (the overlay still owns them); --ignore-unmatch makes the
+// call a no-op when the path was never tracked.
+func ejectFromHost(hr host.Repo, rels []string) error {
+	if len(rels) == 0 {
+		return nil
+	}
+	args := append([]string{"rm", "-r", "--cached", "--ignore-unmatch", "--quiet", "--"}, rels...)
+	if _, err := hostGit(hr.Root, args...); err != nil {
+		return fmt.Errorf("eject from host index: %w", err)
+	}
+	return nil
+}
+
+// topLevels reduces repo-relative paths to their unique first path segments — the
+// granularity attic records in the .gitignore block and evicts from the host index.
+func topLevels(paths []string) []string {
+	set := make(map[string]struct{}, len(paths))
+	for _, p := range paths {
+		if p == "" {
+			continue
+		}
+		if i := strings.IndexByte(p, '/'); i >= 0 {
+			p = p[:i]
+		}
+		set[p] = struct{}{}
+	}
+	out := make([]string, 0, len(set))
+	for p := range set {
+		out = append(out, p)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // relativiseToHost converts a list of user-supplied paths into clean, slash-separated

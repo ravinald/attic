@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ravinald/attic/internal/gitwrap"
+	"github.com/ravinald/attic/internal/ignore"
 	"github.com/ravinald/attic/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -97,6 +98,22 @@ Refuses to clobber existing files unless --force.`,
 		}
 
 		if err := repo.Stream("checkout", "HEAD", "--", "."); err != nil {
+			return err
+		}
+
+		// Re-establish the host .gitignore block for the restored paths. Without it a
+		// fresh clone's files are un-ignored, and the next host `git add -A` would stage
+		// the whole overlay. Eject afterwards in case any path was already tracked.
+		tops := topLevels(paths)
+		blk, err := ignore.Load(gitignorePath(hr))
+		if err != nil {
+			return err
+		}
+		blk.Add(tops...)
+		if err := blk.Save(); err != nil {
+			return err
+		}
+		if err := ejectFromHost(hr, tops); err != nil {
 			return err
 		}
 
