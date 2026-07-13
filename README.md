@@ -87,6 +87,7 @@ attic clone git@github.com:ravinald/myrepo-attic.git
 | `attic clone <remote> [--mono]` | Restore an existing overlay on a new machine. |
 | `attic add <path>...` | Stage paths and append to host `.gitignore` block. |
 | `attic rm <path>... [--delete]` | Stop tracking; `--delete` also removes the file. |
+| `attic eject [--check]` | Evict managed paths from the **host** index (never from disk or the overlay); `--check` reports without changing. |
 | `attic commit -m <msg>` | Commit staged overlay changes. |
 | `attic status` `push` `pull` `fetch` `log` `diff` | Pass-through to git. |
 | `attic sync [--strategy=rebase\|merge]` | Fetch + integrate + push. Refuses on dirty work tree. |
@@ -152,6 +153,8 @@ docs-internal/
 ```
 
 Edit the block by hand only at your own risk — `attic add`/`rm` will rewrite it. Content outside the markers is preserved.
+
+The block alone isn't enough: `.gitignore` only suppresses *untracked* paths, so it can't untrack a path already in the host index or stop a `git add -f`. So `attic add` also runs `git rm --cached` against the host after adopting a path, and `attic clone` rewrites the block on restore. If a path is already stuck in the host index (a stray force-add, a pre-`attic` commit), `attic eject` evicts it — working-tree files and overlay history stay put. `attic eject --check` reports without changing, so a pre-commit hook can gate on it.
 
 ## Why not vcsh / repoverlay / chezmoi?
 
