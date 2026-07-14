@@ -10,7 +10,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ravinald/attic/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -57,11 +56,7 @@ it as a manual label locally, so a later 'attic labels push' won't revert it.`,
 			fmt.Println("attic: no label changes")
 			return nil
 		}
-		if err := writeCommitPushLabels(dir, repo, m.Remote, edited); err != nil {
-			return err
-		}
-		applyLabelsToLocal(edited)
-		return nil
+		return writeCommitPushLabels(dir, repo, m.Remote, edited)
 	},
 }
 
@@ -151,24 +146,6 @@ func runEditor(path string) error {
 		return fmt.Errorf("labels edit: editor %q: %w", editor, err)
 	}
 	return nil
-}
-
-// applyLabelsToLocal mirrors edited names into the meta.toml of overlays present on this machine, as
-// manual labels, so `attic list` shows them and a later push doesn't revert the edit.
-func applyLabelsToLocal(doc labelsDoc) {
-	metas, err := store.EnumerateMetas()
-	if err != nil {
-		return
-	}
-	for _, m := range metas {
-		e, ok := doc.Hosts[m.Fingerprint]
-		if !ok || m.Label == e.Label {
-			continue
-		}
-		m.Label = e.Label
-		m.LabelSource = store.LabelSourceManual
-		_ = store.SaveMeta(m)
-	}
 }
 
 func init() {
