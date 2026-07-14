@@ -42,9 +42,10 @@ var listCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		overrides, _ := store.LoadOverrides()
 		rows := make([]overlayRow, 0, len(metas))
 		for _, m := range metas {
-			rows = append(rows, buildRow(m, listFlags.fetch))
+			rows = append(rows, buildRow(m, listFlags.fetch, overrides))
 		}
 		if listFlags.asJSON {
 			return json.NewEncoder(os.Stdout).Encode(rows)
@@ -53,9 +54,9 @@ var listCmd = &cobra.Command{
 	},
 }
 
-func buildRow(m store.Meta, fetch bool) overlayRow {
+func buildRow(m store.Meta, fetch bool, overrides map[string]string) overlayRow {
 	r := overlayRow{
-		Label:    m.DisplayLabel(),
+		Label:    resolveLabelWith(m, overrides),
 		FP:       m.Fingerprint,
 		HostRoot: m.HostRoot,
 		HostName: m.HostName,

@@ -3,7 +3,6 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -36,12 +35,12 @@ type labelEntry struct {
 
 var labelCmd = &cobra.Command{
 	Use:   "label",
-	Short: "Get or set the human-readable label for the current overlay.",
+	Short: "Get or set the display name for the current overlay.",
 }
 
 var labelGetCmd = &cobra.Command{
 	Use:   "get",
-	Short: "Print the current overlay's label (falls back to host_name).",
+	Short: "Print the current overlay's display name (override, else map/auto, else basename).",
 	RunE: func(_ *cobra.Command, _ []string) error {
 		hr, err := resolveHost()
 		if err != nil {
@@ -51,36 +50,104 @@ var labelGetCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		fmt.Println(m.DisplayLabel())
+		fmt.Println(resolveLabel(m))
 		return nil
 	},
 }
 
+var labelSetFlags struct {
+	unset bool
+}
+
 var labelSetCmd = &cobra.Command{
-	Use:   "set <label>",
-	Short: "Set the current overlay's label.",
-	Args:  cobra.ExactArgs(1),
+	Use:   "set [label]",
+	Short: "Set a local display name for the current overlay (this machine only, never pushed).",
+	Long: `Writes a local override to ~/.config/attic/overrides.toml — a per-machine display name that
+never leaves this machine. The shared map on the mono remote stays the source of truth; change that
+with 'attic labels edit'. Use --unset to drop the override and fall back to the map/auto name.`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
-		label := strings.TrimSpace(args[0])
-		if err := validLabel(label); err != nil {
-			return err
-		}
 		hr, err := resolveHost()
 		if err != nil {
 			return err
 		}
-		m, err := store.LoadMeta(hr.Fingerprint())
+		fp := hr.Fingerprint()
+		if _, err := store.LoadMeta(fp); err != nil {
+			return err
+		}
+		if labelSetFlags.unset {
+			if err := store.SetOverride(fp, ""); err != nil {
+				return err
+			}
+			fmt.Printf("attic: cleared local label override for %s\n", fp)
+			return nil
+		}
+		if len(args) != 1 {
+			return errors.New("label set: provide a <label>, or use --unset to clear it")
+		}
+		label := strings.TrimSpace(args[0])
+		if err := validLabel(label); err != nil {
+			return err
+		}
+		if err := store.SetOverride(fp, label); err != nil {
+			return err
+		}
+		fmt.Printf("attic: local label for %s set to %q (this machine only)\n", fp, label)
+		return nil
+	},
+}
+
+var labelResetFlags struct {
+	force bool
+}
+
+var labelResetCmd = &cobra.Command{
+	Use:   "reset",
+	Short: "Clear ALL local label overrides on this machine (force-reset to the shared/auto names).",
+	Long: `Wipes ~/.config/attic/overrides.toml, so every overlay falls back to its shared-map or
+auto-derived name. Without --force it only lists what would be cleared.`,
+	Args: cobra.NoArgs,
+	RunE: func(_ *cobra.Command, _ []string) error {
+		ov, err := store.LoadOverrides()
 		if err != nil {
 			return err
 		}
-		m.Label = label
-		m.LabelSource = store.LabelSourceManual
-		if err := store.SaveMeta(m); err != nil {
+		if len(ov) == 0 {
+			fmt.Println("attic: no local overrides to clear")
+			return nil
+		}
+		fps := make([]string, 0, len(ov))
+		for fp := range ov {
+			fps = append(fps, fp)
+		}
+		sort.Strings(fps)
+		if !labelResetFlags.force {
+			fmt.Printf("attic: %d local override(s) would be cleared (pass --force to apply):\n", len(ov))
+			for _, fp := range fps {
+				fmt.Printf("  %s  %s\n", fp, ov[fp])
+			}
+			return nil
+		}
+		if err := store.ClearOverrides(); err != nil {
 			return err
 		}
-		fmt.Printf("attic: label for %s set to %q\n", m.Fingerprint, label)
+		fmt.Printf("attic: cleared %d local override(s) — names fall back to the shared map\n", len(ov))
 		return nil
 	},
+}
+
+// resolveLabel is an overlay's display name in precedence order: a local override, then the auto or
+// last-pulled label in meta, then the host basename. resolveLabelWith avoids a per-row overrides read.
+func resolveLabel(m store.Meta) string {
+	ov, _ := store.LoadOverrides()
+	return resolveLabelWith(m, ov)
+}
+
+func resolveLabelWith(m store.Meta, overrides map[string]string) string {
+	if l, ok := overrides[m.Fingerprint]; ok {
+		return l
+	}
+	return m.DisplayLabel()
 }
 
 // labelsCmd (plural) owns the multi-machine sync over the mono remote.
@@ -101,9 +168,10 @@ var labelsPushCmd = &cobra.Command{
 	},
 }
 
-// pushLabelsFor publishes every local overlay's label for the given mono remote to its _attic/labels
-// branch, regenerating labels.toml and the browsable README map. It is the shared engine behind
-// `attic labels push` and `attic doctor --fix --push`.
+// pushLabelsFor contributes this machine's overlay names to the mono remote's _attic/labels map,
+// regenerating labels.toml and the browsable README. It is contribute-only: a fingerprint already in
+// the map is left untouched, so `attic labels edit` stays the single authority over existing names
+// and no machine's push can overwrite a curated label. Shared by `labels push` and `doctor --push`.
 func pushLabelsFor(remote string) error {
 	local := collectLocalLabels(remote)
 	if len(local) == 0 {
@@ -122,17 +190,26 @@ func pushLabelsFor(remote string) error {
 	if merged.Hosts == nil {
 		merged.Hosts = map[string]labelEntry{}
 	}
-	maps.Copy(merged.Hosts, local)
-	if err := writeLabelsDoc(filepath.Join(dir, labelsFile), merged); err != nil {
+	for fp, e := range local {
+		if _, exists := merged.Hosts[fp]; !exists {
+			merged.Hosts[fp] = e
+		}
+	}
+	return writeCommitPushLabels(dir, repo, remote, merged)
+}
+
+// writeCommitPushLabels renders labels.toml + the README map for doc, then commits and pushes them to
+// the remote's _attic/labels branch. A no-op diff is reported, not an error. Shared by push and edit.
+func writeCommitPushLabels(dir string, repo gitwrap.Repo, remote string, doc labelsDoc) error {
+	if err := writeLabelsDoc(filepath.Join(dir, labelsFile), doc); err != nil {
 		return err
 	}
-	if err := writeLabelsReadme(filepath.Join(dir, labelsReadme), merged, remote); err != nil {
+	if err := writeLabelsReadme(filepath.Join(dir, labelsReadme), doc, remote); err != nil {
 		return err
 	}
 	if err := repo.Stream("add", labelsFile, labelsReadme); err != nil {
 		return err
 	}
-
 	clean, err := repo.Run("status", "--porcelain")
 	if err != nil {
 		return err
@@ -142,20 +219,19 @@ func pushLabelsFor(remote string) error {
 		return nil
 	}
 	hostname, _ := os.Hostname()
-	msg := fmt.Sprintf("labels: push from %s", hostname)
-	if err := repo.Stream("commit", "-m", msg); err != nil {
+	if err := repo.Stream("commit", "-m", "labels: push from "+hostname); err != nil {
 		return err
 	}
 	if err := repo.Stream("push", "origin", "HEAD:"+labelsBranch); err != nil {
 		return err
 	}
-	fmt.Printf("attic: pushed %d label(s) to %s on %s\n", len(local), labelsBranch, remote)
+	fmt.Printf("attic: pushed %d label(s) to %s on %s\n", len(doc.Hosts), labelsBranch, remote)
 	return nil
 }
 
 var labelsPullCmd = &cobra.Command{
 	Use:   "pull",
-	Short: "Fetch labels from the _attic/labels branch and update local overlays.",
+	Short: "Cache the shared map's names into local overlay labels (a local override still wins).",
 	RunE: func(_ *cobra.Command, _ []string) error {
 		m, err := currentMonoMeta()
 		if err != nil {
@@ -380,7 +456,9 @@ func validLabel(s string) error {
 }
 
 func init() {
-	labelCmd.AddCommand(labelGetCmd, labelSetCmd)
+	labelSetCmd.Flags().BoolVar(&labelSetFlags.unset, "unset", false, "Clear the local override and fall back to the map/auto name.")
+	labelResetCmd.Flags().BoolVar(&labelResetFlags.force, "force", false, "Actually clear the overrides (without it, only lists them).")
+	labelCmd.AddCommand(labelGetCmd, labelSetCmd, labelResetCmd)
 	labelsCmd.AddCommand(labelsPushCmd, labelsPullCmd)
 	root.AddCommand(labelCmd)
 	root.AddCommand(labelsCmd)

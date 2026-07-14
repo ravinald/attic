@@ -95,8 +95,11 @@ attic clone git@github.com:ravinald/myrepo-attic.git
 | `attic ls` | List paths tracked in the overlay. |
 | `attic list [--fetch] [--wide] [--json]` | Show every overlay on this machine with label, fp, sync state. |
 | `attic where [--fp]` | Print bare path, fingerprint, remote. |
-| `attic label get` / `attic label set <name>` | Read or set the current overlay's label (auto-set to `owner/repo` at init). |
-| `attic labels push` / `attic labels pull` | Sync the host-id → label mapping across machines via the mono remote. |
+| `attic label get` | Print the display name: local override, else shared/auto name, else basename. |
+| `attic label set <name>` / `--unset` | Set (or clear) a per-machine display override in `~/.config/attic` — never pushed. |
+| `attic label reset [--force]` | Clear ALL local overrides on this machine (force-reset to shared/auto names); lists them without `--force`. |
+| `attic labels edit` | Edit the whole shared map in `$EDITOR`; validates, regenerates the README, publishes on save. |
+| `attic labels push` / `attic labels pull` | Contribute new overlays to the map (never overwrites) / cache the map's names locally. |
 | `attic doctor [--fix] [--force] [--push]` | Audit every overlay's label against its origin remote; report drift, `--fix` corrects it, `--push` publishes the corrected map. |
 | `attic exec -- <git-args>` | Run any git command against the overlay. |
 | `attic version` | Version, commit, build date. |
@@ -113,12 +116,18 @@ host/a1b2c3d4e5f6
 
 Nothing there tells you which branch is `wifimgr` and which is `attic`. A **label** is a fingerprint → human-name mapping that makes the listing legible without changing where anything is stored.
 
-`attic init` and `attic clone` set the label automatically from the host repo's origin remote, as `owner/repo` — the unambiguous name (two repos both called `attic` under different owners no longer collide). No origin? It falls back to the repo basename. Override any time:
+Labels live in two layers, and no machine "owns" an overlay:
+
+- **The shared map** — `labels.toml` on the mono remote's `_attic/labels` branch. The canonical fingerprint → name mapping everyone browses. `attic init`/`clone` seed it from the host origin as `owner/repo`; `attic labels edit` is the one authority for changing an existing name.
+- **Local overrides** — `~/.config/attic/overrides.toml`. Per-machine display names that **never leave the machine**. `attic label set` writes here.
+
+`attic list` and `attic label get` resolve **override → shared/auto name → repo basename**:
 
 ```sh
 cd ~/git/wifimgr
 attic label get              # -> ravinald/wifimgr (from origin; basename if no origin)
-attic label set wifimgr      # override to a name of your choice (marks it manual)
+attic label set my-wifi      # a display name for THIS machine only (never pushed)
+attic label set --unset      # drop the override, fall back to the map/auto name
 ```
 
 `attic list` then reads by name instead of by SHA:
@@ -140,14 +149,17 @@ attic doctor --fix --force   # also adopt the origin slug over a label you set b
 attic doctor --fix --push    # ...and publish the corrected map to each affected mono remote
 ```
 
-A label you set by hand is never overwritten without `--force` — provenance is tracked in `meta.toml` (`label_source = origin|manual`). Plain `--fix` stays local, so hooks and offline runs never touch the network; add `--push` to chain `attic labels push` for the mono remotes whose overlays changed.
+`doctor` reconciles only the auto (origin-derived) label in local `meta.toml`; it never touches a curated name in the shared map (push is contribute-only). An overlay with a **local override** is reported as `overridden` and left entirely alone — doctor honours your local choice. To hand it back to doctor, clear the override with `attic label reset`. Plain `--fix` stays local, so hooks and offline runs never touch the network; add `--push` to chain `attic labels push` for the mono remotes whose overlays changed.
 
-Labels live in each overlay's local `meta.toml`, so they don't travel with the overlay's files. Sync them across machines over the mono remote's `_attic/labels` branch, which holds a single flat `labels.toml` map:
+Three commands manage the shared map on `_attic/labels`:
 
 ```sh
-attic labels push            # publish this machine's fp -> label map
-attic labels pull            # on another machine, apply the published names
+attic labels edit            # open the whole map in $EDITOR; validate + publish on save
+attic labels push            # contribute NEW overlays' auto names; never overwrites existing entries
+attic labels pull            # cache the map's names into local meta for display (an override still wins)
 ```
+
+`attic labels edit` is the authority — it's the only way to rename an existing entry, including a "foreign" overlay whose host repo lives on another machine. It edits a simple `<fingerprint>  <label>` table; deleting a line drops that entry. `attic labels push` is **contribute-only**: it fills in overlays the map hasn't seen yet, so no machine's push can clobber a curated name — the map stays the source of truth. A `--mono-remote` init seeds this branch and points the repo's default branch at it, so the map is the landing page from day one.
 
 Two caveats worth knowing:
 

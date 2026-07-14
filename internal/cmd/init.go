@@ -3,10 +3,13 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/ravinald/attic/internal/gh"
 	"github.com/ravinald/attic/internal/gitwrap"
+	"github.com/ravinald/attic/internal/host"
 	"github.com/ravinald/attic/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -113,8 +116,45 @@ Two remote shapes:
 		default:
 			fmt.Println("  remote: (none — set later with `attic exec -- remote add origin <url>`)")
 		}
+		if mode == modeMono {
+			bootstrapMonoLabels(remote)
+		}
 		return nil
 	},
+}
+
+// bootstrapMonoLabels seeds the _attic/labels branch and points the repo's default branch at it the
+// first time an overlay is created against a mono remote. Everything here is best-effort: a fresh
+// overlay is already usable, so network or gh failures downgrade to a printed hint rather than an
+// error that would strand init.
+func bootstrapMonoLabels(remote string) {
+	out, err := exec.Command("git", "ls-remote", "--heads", remote, labelsBranch).Output()
+	if err != nil {
+		fmt.Printf("attic: skipped labels bootstrap (couldn't reach %s): %v\n", remote, err)
+		return
+	}
+	if strings.TrimSpace(string(out)) != "" {
+		return // already set up on a prior init
+	}
+
+	fmt.Printf("attic: bootstrapping the label map on %s ...\n", remote)
+	if err := pushLabelsFor(remote); err != nil {
+		fmt.Printf("attic: labels bootstrap skipped: %v\n", err)
+		return
+	}
+	slug, ok := host.ParseOwnerRepo(remote)
+	if !ok {
+		return
+	}
+	if !gh.Available() {
+		fmt.Printf("attic: set the repo default branch to %s so the map is the landing page (gh not found)\n", labelsBranch)
+		return
+	}
+	if err := gh.SetDefaultBranch(slug, labelsBranch); err != nil {
+		fmt.Printf("attic: set the repo default branch to %s manually: %v\n", labelsBranch, err)
+		return
+	}
+	fmt.Printf("attic: default branch set to %s — the map is now the repo landing page\n", labelsBranch)
 }
 
 type initMode int
