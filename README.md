@@ -97,7 +97,7 @@ attic clone git@github.com:ravinald/myrepo-attic.git
 | `attic where [--fp]` | Print bare path, fingerprint, remote. |
 | `attic label get` / `attic label set <name>` | Read or set the current overlay's label (auto-set to `owner/repo` at init). |
 | `attic labels push` / `attic labels pull` | Sync the host-id → label mapping across machines via the mono remote. |
-| `attic doctor [--fix] [--force]` | Audit every overlay's label against its origin remote; report drift, `--fix` corrects it. |
+| `attic doctor [--fix] [--force] [--push]` | Audit every overlay's label against its origin remote; report drift, `--fix` corrects it, `--push` publishes the corrected map. |
 | `attic exec -- <git-args>` | Run any git command against the overlay. |
 | `attic version` | Version, commit, build date. |
 
@@ -137,9 +137,10 @@ Origins move — a repo gets renamed, transferred to an org, re-homed. `attic do
 attic doctor                 # report only; exits non-zero if fixable drift exists (hook-friendly)
 attic doctor --fix           # rewrite auto-derived labels + refresh moved origins in local meta
 attic doctor --fix --force   # also adopt the origin slug over a label you set by hand
+attic doctor --fix --push    # ...and publish the corrected map to each affected mono remote
 ```
 
-A label you set by hand is never overwritten without `--force` — provenance is tracked in `meta.toml` (`label_source = origin|manual`). `doctor` only touches local meta; run `attic labels push` afterward to publish the corrected map.
+A label you set by hand is never overwritten without `--force` — provenance is tracked in `meta.toml` (`label_source = origin|manual`). Plain `--fix` stays local, so hooks and offline runs never touch the network; add `--push` to chain `attic labels push` for the mono remotes whose overlays changed.
 
 Labels live in each overlay's local `meta.toml`, so they don't travel with the overlay's files. Sync them across machines over the mono remote's `_attic/labels` branch, which holds a single flat `labels.toml` map:
 

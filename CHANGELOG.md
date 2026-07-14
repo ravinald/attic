@@ -23,6 +23,7 @@ Initial public release.
 - `attic labels push` now also writes a `README.md` on the `_attic/labels` branch: a markdown table linking each `owner/repo` label to its `host/<fp>` branch, so the mono remote is browsable on the web without decoding `labels.toml`.
 - `attic deinit [--force]` — undo `init`/`clone`: removes the local bare overlay, its meta, and attic's `.gitignore` block. Work-tree files are left in place. Refuses when the overlay holds commits not on its remote unless `--force`.
 - `attic commit` without `-m` now commits with a timestamped `attic snapshot <UTC>` message instead of dropping into an editor that aborts on an empty message.
+- `attic doctor --fix --push` publishes the corrected map to each affected mono remote in one shot (chains `attic labels push`). Plain `--fix` stays local, so hooks and offline runs never touch the network.
 
 ### Quality
 
