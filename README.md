@@ -84,11 +84,12 @@ attic clone git@github.com:ravinald/myrepo-attic.git
 | Command | Purpose |
 |---|---|
 | `attic init [--remote URL \| --mono-remote URL \| --gh-private]` | Create overlay for the current host repo. |
+| `attic deinit [--force]` | Remove the local overlay + `.gitignore` block (work-tree files stay). Refuses to drop unpushed commits without `--force`. |
 | `attic clone <remote> [--mono]` | Restore an existing overlay on a new machine. |
 | `attic add <path>...` | Stage paths and append to host `.gitignore` block. |
 | `attic rm <path>... [--delete]` | Stop tracking; `--delete` also removes the file. |
 | `attic eject [--check]` | Evict managed paths from the **host** index (never from disk or the overlay); `--check` reports without changing. |
-| `attic commit -m <msg>` | Commit staged overlay changes. |
+| `attic commit [-m <msg>]` | Commit staged overlay changes. Without `-m`, uses a timestamped snapshot message. |
 | `attic status` `push` `pull` `fetch` `log` `diff` | Pass-through to git. |
 | `attic sync [--strategy=rebase\|merge]` | Fetch + integrate + push. Refuses on dirty work tree. |
 | `attic ls` | List paths tracked in the overlay. |

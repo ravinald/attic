@@ -1,6 +1,10 @@
 package cmd
 
-import "github.com/spf13/cobra"
+import (
+	"time"
+
+	"github.com/spf13/cobra"
+)
 
 var commitFlags struct {
 	message    string
@@ -16,10 +20,13 @@ var commitCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		gitArgs := []string{"commit"}
-		if commitFlags.message != "" {
-			gitArgs = append(gitArgs, "-m", commitFlags.message)
+		// An overlay is scratch history — a message rarely earns its keep. Without -m, git would
+		// drop into an editor that aborts on an empty message; synthesise a timestamped one instead.
+		msg := commitFlags.message
+		if msg == "" {
+			msg = "attic snapshot " + time.Now().UTC().Format("2006-01-02 15:04:05 UTC")
 		}
+		gitArgs := []string{"commit", "-m", msg}
 		if commitFlags.all {
 			gitArgs = append(gitArgs, "-a")
 		}
