@@ -94,8 +94,9 @@ attic clone git@github.com:ravinald/myrepo-attic.git
 | `attic ls` | List paths tracked in the overlay. |
 | `attic list [--fetch] [--wide] [--json]` | Show every overlay on this machine with label, fp, sync state. |
 | `attic where [--fp]` | Print bare path, fingerprint, remote. |
-| `attic label get` / `attic label set <name>` | Read or set the current overlay's human label. |
+| `attic label get` / `attic label set <name>` | Read or set the current overlay's label (auto-set to `owner/repo` at init). |
 | `attic labels push` / `attic labels pull` | Sync the host-id → label mapping across machines via the mono remote. |
+| `attic doctor [--fix] [--force]` | Audit every overlay's label against its origin remote; report drift, `--fix` corrects it. |
 | `attic exec -- <git-args>` | Run any git command against the overlay. |
 | `attic version` | Version, commit, build date. |
 
@@ -111,19 +112,33 @@ host/a1b2c3d4e5f6
 
 Nothing there tells you which branch is `wifimgr` and which is `attic`. A **label** is a fingerprint → human-name mapping that makes the listing legible without changing where anything is stored.
 
+`attic init` and `attic clone` set the label automatically from the host repo's origin remote, as `owner/repo` — the unambiguous name (two repos both called `attic` under different owners no longer collide). No origin? It falls back to the repo basename. Override any time:
+
 ```sh
 cd ~/git/wifimgr
-attic label set wifimgr
-attic label get              # -> wifimgr (falls back to the repo basename if unset)
+attic label get              # -> ravinald/wifimgr (from origin; basename if no origin)
+attic label set wifimgr      # override to a name of your choice (marks it manual)
 ```
 
 `attic list` then reads by name instead of by SHA:
 
 ```
-LABEL     FP            HOST ROOT                BRANCH             SYNC
-wifimgr   8b88ecad3aa9  /Users/you/git/wifimgr   host/8b88ecad3aa9  clean
-attic     3f2a9c1d5e7b  /Users/you/git/attic     host/3f2a9c1d5e7b  ↑1 ↓0
+LABEL              FP            HOST ROOT                BRANCH             SYNC
+ravinald/wifimgr   8b88ecad3aa9  /Users/you/git/wifimgr   host/8b88ecad3aa9  clean
+ravinald/attic     3f2a9c1d5e7b  /Users/you/git/attic     host/3f2a9c1d5e7b  ↑1 ↓0
 ```
+
+### Keeping the map honest: `attic doctor`
+
+Origins move — a repo gets renamed, transferred to an org, re-homed. `attic doctor` sweeps every overlay on the machine and flags any whose label no longer matches its origin's `owner/repo`:
+
+```sh
+attic doctor                 # report only; exits non-zero if fixable drift exists (hook-friendly)
+attic doctor --fix           # rewrite auto-derived labels + refresh moved origins in local meta
+attic doctor --fix --force   # also adopt the origin slug over a label you set by hand
+```
+
+A label you set by hand is never overwritten without `--force` — provenance is tracked in `meta.toml` (`label_source = origin|manual`). `doctor` only touches local meta; run `attic labels push` afterward to publish the corrected map.
 
 Labels live in each overlay's local `meta.toml`, so they don't travel with the overlay's files. Sync them across machines over the mono remote's `_attic/labels` branch, which holds a single flat `labels.toml` map:
 
@@ -134,7 +149,7 @@ attic labels pull            # on another machine, apply the published names
 
 Two caveats worth knowing:
 
-- Labels **don't rename the `host/<fp>` branches** on the remote. The fingerprint stays the branch name — it's the stable, per-clone identity; a label is mutable and per-user, so it'd be a poor branch name. To decode branches from the GitHub UI, read `labels.toml` on the `_attic/labels` branch — that file *is* the SHA → name key.
+- Labels **don't rename the `host/<fp>` branches** on the remote. The fingerprint stays the branch name — it's the stable, per-clone identity; a label is mutable and per-user, so it'd be a poor branch name. To decode branches from the GitHub UI, browse the `_attic/labels` branch: `attic labels push` writes a `README.md` there — a table linking each `owner/repo` label to its `host/<fp>` branch — alongside the raw `labels.toml` key.
 - Labels sync is **mono-mode only**. Per-host remotes have nothing shared to publish the map to.
 
 ## Guardrails on the mono remote

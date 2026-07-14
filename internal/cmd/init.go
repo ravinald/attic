@@ -96,6 +96,10 @@ Two remote shapes:
 			Mono:        mode == modeMono,
 			CreatedAt:   time.Now().UTC(),
 		}
+		if slug, ok := hr.OwnerRepo(); ok {
+			m.Label = slug
+			m.LabelSource = store.LabelSourceOrigin
+		}
 		if err := store.SaveMeta(m); err != nil {
 			return err
 		}
