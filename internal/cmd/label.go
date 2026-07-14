@@ -97,53 +97,60 @@ var labelsPushCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		local := collectLocalLabels(m.Remote)
-		if len(local) == 0 {
-			return fmt.Errorf("labels push: no local overlays found for %s", m.Remote)
-		}
-		dir, repo, cleanup, err := openLabelsWorktree(m.Remote)
-		if err != nil {
-			return err
-		}
-		defer cleanup()
-
-		merged, err := readLabelsDoc(filepath.Join(dir, labelsFile))
-		if err != nil {
-			return err
-		}
-		if merged.Hosts == nil {
-			merged.Hosts = map[string]labelEntry{}
-		}
-		maps.Copy(merged.Hosts, local)
-		if err := writeLabelsDoc(filepath.Join(dir, labelsFile), merged); err != nil {
-			return err
-		}
-		if err := writeLabelsReadme(filepath.Join(dir, labelsReadme), merged, m.Remote); err != nil {
-			return err
-		}
-		if err := repo.Stream("add", labelsFile, labelsReadme); err != nil {
-			return err
-		}
-
-		clean, err := repo.Run("status", "--porcelain")
-		if err != nil {
-			return err
-		}
-		if strings.TrimSpace(clean) == "" {
-			fmt.Println("attic: labels already in sync — nothing to push")
-			return nil
-		}
-		hostname, _ := os.Hostname()
-		msg := fmt.Sprintf("labels: push from %s", hostname)
-		if err := repo.Stream("commit", "-m", msg); err != nil {
-			return err
-		}
-		if err := repo.Stream("push", "origin", "HEAD:"+labelsBranch); err != nil {
-			return err
-		}
-		fmt.Printf("attic: pushed %d label(s) to %s on %s\n", len(local), labelsBranch, m.Remote)
-		return nil
+		return pushLabelsFor(m.Remote)
 	},
+}
+
+// pushLabelsFor publishes every local overlay's label for the given mono remote to its _attic/labels
+// branch, regenerating labels.toml and the browsable README map. It is the shared engine behind
+// `attic labels push` and `attic doctor --fix --push`.
+func pushLabelsFor(remote string) error {
+	local := collectLocalLabels(remote)
+	if len(local) == 0 {
+		return fmt.Errorf("labels push: no local overlays found for %s", remote)
+	}
+	dir, repo, cleanup, err := openLabelsWorktree(remote)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	merged, err := readLabelsDoc(filepath.Join(dir, labelsFile))
+	if err != nil {
+		return err
+	}
+	if merged.Hosts == nil {
+		merged.Hosts = map[string]labelEntry{}
+	}
+	maps.Copy(merged.Hosts, local)
+	if err := writeLabelsDoc(filepath.Join(dir, labelsFile), merged); err != nil {
+		return err
+	}
+	if err := writeLabelsReadme(filepath.Join(dir, labelsReadme), merged, remote); err != nil {
+		return err
+	}
+	if err := repo.Stream("add", labelsFile, labelsReadme); err != nil {
+		return err
+	}
+
+	clean, err := repo.Run("status", "--porcelain")
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(clean) == "" {
+		fmt.Printf("attic: labels already in sync on %s — nothing to push\n", remote)
+		return nil
+	}
+	hostname, _ := os.Hostname()
+	msg := fmt.Sprintf("labels: push from %s", hostname)
+	if err := repo.Stream("commit", "-m", msg); err != nil {
+		return err
+	}
+	if err := repo.Stream("push", "origin", "HEAD:"+labelsBranch); err != nil {
+		return err
+	}
+	fmt.Printf("attic: pushed %d label(s) to %s on %s\n", len(local), labelsBranch, remote)
+	return nil
 }
 
 var labelsPullCmd = &cobra.Command{

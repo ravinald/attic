@@ -17,6 +17,7 @@ import (
 var doctorFlags struct {
 	fix   bool
 	force bool
+	push  bool
 }
 
 // finding is one thing doctor noticed about an overlay. A finding is either fixable (an auto-derived
@@ -44,10 +45,14 @@ host repo's current origin remote.
 Without flags it only reports, exiting non-zero when fixable drift exists (suitable for a hook).
 --fix rewrites auto-derived labels and refreshes moved origin URLs in the local meta.
 --force additionally adopts the origin slug over a hand-set label.
+--fix --push publishes the corrected map to each affected mono remote (chains 'attic labels push').
 
-doctor never touches the mono remote — run 'attic labels push' afterwards to publish the corrected map.`,
+Plain --fix stays local — offline and CI runs never touch the network unless you ask with --push.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
+		if doctorFlags.push && !doctorFlags.fix {
+			return fmt.Errorf("doctor: --push requires --fix (nothing to publish without fixing first)")
+		}
 		metas, err := store.EnumerateMetas()
 		if err != nil {
 			return err
@@ -84,11 +89,25 @@ doctor never touches the mono remote — run 'attic labels push' afterwards to p
 			return nil
 		}
 
-		applied, skipped := applyFindings(findings)
+		applied, skipped, remotes := applyFindings(findings)
 		fmt.Printf("attic: fixed %d overlay(s)\n", applied)
 		if len(skipped) > 0 {
 			fmt.Println("attic: left untouched (advisory — rerun with --force to adopt manual labels, or resolve by hand):")
 			printFindings(os.Stdout, skipped)
+		}
+		if !doctorFlags.push {
+			if applied > 0 {
+				fmt.Println("attic: run `attic labels push` to publish the corrected map (or pass --push next time)")
+			}
+			return nil
+		}
+		for _, remote := range remotes {
+			if err := pushLabelsFor(remote); err != nil {
+				return err
+			}
+		}
+		if len(remotes) == 0 {
+			fmt.Println("attic: --push: no mono-remote overlays were changed — nothing to publish")
 		}
 		return nil
 	},
@@ -148,11 +167,11 @@ func classify(m store.Meta) *finding {
 		fixable: true, detail: fmt.Sprintf("label %q → %q", m.DisplayLabel(), slug)}
 }
 
-// applyFindings writes the fixes doctor is allowed to make and returns how many it applied plus the
-// findings it deliberately left alone (anomalies, and protected labels unless --force).
-func applyFindings(findings []finding) (int, []finding) {
-	applied := 0
-	var skipped []finding
+// applyFindings writes the fixes doctor is allowed to make. It returns how many it applied, the
+// findings it deliberately left alone (anomalies, and protected labels unless --force), and the
+// distinct mono remotes whose overlays it touched — the set --push must republish.
+func applyFindings(findings []finding) (applied int, skipped []finding, remotes []string) {
+	seen := map[string]struct{}{}
 	for _, f := range findings {
 		if f.anomaly || (f.protected && !doctorFlags.force) {
 			skipped = append(skipped, f)
@@ -175,8 +194,15 @@ func applyFindings(findings []finding) (int, []finding) {
 			continue
 		}
 		applied++
+		if m.Mono && m.Remote != "" {
+			if _, ok := seen[m.Remote]; !ok {
+				seen[m.Remote] = struct{}{}
+				remotes = append(remotes, m.Remote)
+			}
+		}
 	}
-	return applied, skipped
+	sort.Strings(remotes)
+	return applied, skipped, remotes
 }
 
 // liveOrigin reads the host repo's current origin URL, quietly — a missing origin is information,
@@ -207,5 +233,6 @@ func printFindings(w io.Writer, findings []finding) {
 func init() {
 	doctorCmd.Flags().BoolVar(&doctorFlags.fix, "fix", false, "Rewrite drifted auto-labels and refresh moved origin URLs in local meta.")
 	doctorCmd.Flags().BoolVar(&doctorFlags.force, "force", false, "With --fix, also overwrite hand-set labels that drifted from origin.")
+	doctorCmd.Flags().BoolVar(&doctorFlags.push, "push", false, "With --fix, publish the corrected map to each affected mono remote.")
 	root.AddCommand(doctorCmd)
 }
