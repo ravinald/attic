@@ -24,6 +24,8 @@ Initial public release.
 - `attic deinit [--force]` — undo `init`/`clone`: removes the local bare overlay, its meta, and attic's `.gitignore` block. Work-tree files are left in place. Refuses when the overlay holds commits not on its remote unless `--force`.
 - `attic commit` without `-m` now commits with a timestamped `attic snapshot <UTC>` message instead of dropping into an editor that aborts on an empty message.
 - `attic doctor --fix --push` publishes the corrected map to each affected mono remote in one shot (chains `attic labels push`). Plain `--fix` stays local, so hooks and offline runs never touch the network.
+- `attic labels edit` — edit the whole map in `$EDITOR` (visudo-style): pulls the current names, opens a `<fingerprint>  <label>` table, then validates, regenerates the README, and pushes on save. The only way to rename a "foreign" overlay whose host repo isn't on this machine.
+- `attic init --mono-remote` now bootstraps a fresh mono repo: seeds the `_attic/labels` branch (labels.toml + README map) and sets the repo default branch to `_attic/labels` (best-effort via `gh`), so the map is the landing page without manual setup.
 
 ### Quality
 

@@ -96,7 +96,8 @@ attic clone git@github.com:ravinald/myrepo-attic.git
 | `attic list [--fetch] [--wide] [--json]` | Show every overlay on this machine with label, fp, sync state. |
 | `attic where [--fp]` | Print bare path, fingerprint, remote. |
 | `attic label get` / `attic label set <name>` | Read or set the current overlay's label (auto-set to `owner/repo` at init). |
-| `attic labels push` / `attic labels pull` | Sync the host-id → label mapping across machines via the mono remote. |
+| `attic labels edit` | Edit the whole label map in `$EDITOR`; validates, regenerates the README, and publishes on save. |
+| `attic labels push` / `attic labels pull` | Publish this machine's labels to the map / apply the map's names to this machine's overlays. |
 | `attic doctor [--fix] [--force] [--push]` | Audit every overlay's label against its origin remote; report drift, `--fix` corrects it, `--push` publishes the corrected map. |
 | `attic exec -- <git-args>` | Run any git command against the overlay. |
 | `attic version` | Version, commit, build date. |
@@ -144,10 +145,15 @@ A label you set by hand is never overwritten without `--force` — provenance is
 
 Labels live in each overlay's local `meta.toml`, so they don't travel with the overlay's files. Sync them across machines over the mono remote's `_attic/labels` branch, which holds a single flat `labels.toml` map:
 
+The label lives in two places: each overlay's local `meta.toml` (per machine), and the central `labels.toml` on `_attic/labels` (the map that feeds the README). Three commands move names between them:
+
 ```sh
-attic labels push            # publish this machine's fp -> label map
-attic labels pull            # on another machine, apply the published names
+attic labels edit            # open the whole map in $EDITOR; validate + publish on save
+attic labels push            # publish THIS machine's overlay labels into the map
+attic labels pull            # apply the map's names into THIS machine's overlays (so `attic list` shows them)
 ```
+
+`attic labels edit` is the one to reach for — it's the only way to rename a "foreign" overlay whose host repo lives on another machine (there's no local `meta.toml` here to `label set`). It edits a simple `<fingerprint>  <label>` table; deleting a line drops that entry. A `--mono-remote` init seeds this branch and points the repo's default branch at it, so the map is the landing page from day one.
 
 Two caveats worth knowing:
 

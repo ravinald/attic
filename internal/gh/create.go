@@ -36,6 +36,18 @@ func CreatePrivate(name, description string) (string, error) {
 	return "", fmt.Errorf("gh: could not parse repo URL from output: %s", strings.TrimSpace(string(out)))
 }
 
+// SetDefaultBranch points a GitHub repo's default branch at branch via the gh CLI. slug is "owner/repo".
+func SetDefaultBranch(slug, branch string) error {
+	if !Available() {
+		return fmt.Errorf("gh: gh CLI not found in PATH")
+	}
+	out, err := exec.Command("gh", "repo", "edit", slug, "--default-branch", branch).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("gh: set default branch for %s: %w (output: %s)", slug, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 func httpsToSSH(httpsURL string) string {
 	const prefix = "https://github.com/"
 	if !strings.HasPrefix(httpsURL, prefix) {

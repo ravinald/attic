@@ -123,16 +123,21 @@ func pushLabelsFor(remote string) error {
 		merged.Hosts = map[string]labelEntry{}
 	}
 	maps.Copy(merged.Hosts, local)
-	if err := writeLabelsDoc(filepath.Join(dir, labelsFile), merged); err != nil {
+	return writeCommitPushLabels(dir, repo, remote, merged)
+}
+
+// writeCommitPushLabels renders labels.toml + the README map for doc, then commits and pushes them to
+// the remote's _attic/labels branch. A no-op diff is reported, not an error. Shared by push and edit.
+func writeCommitPushLabels(dir string, repo gitwrap.Repo, remote string, doc labelsDoc) error {
+	if err := writeLabelsDoc(filepath.Join(dir, labelsFile), doc); err != nil {
 		return err
 	}
-	if err := writeLabelsReadme(filepath.Join(dir, labelsReadme), merged, remote); err != nil {
+	if err := writeLabelsReadme(filepath.Join(dir, labelsReadme), doc, remote); err != nil {
 		return err
 	}
 	if err := repo.Stream("add", labelsFile, labelsReadme); err != nil {
 		return err
 	}
-
 	clean, err := repo.Run("status", "--porcelain")
 	if err != nil {
 		return err
@@ -142,14 +147,13 @@ func pushLabelsFor(remote string) error {
 		return nil
 	}
 	hostname, _ := os.Hostname()
-	msg := fmt.Sprintf("labels: push from %s", hostname)
-	if err := repo.Stream("commit", "-m", msg); err != nil {
+	if err := repo.Stream("commit", "-m", "labels: push from "+hostname); err != nil {
 		return err
 	}
 	if err := repo.Stream("push", "origin", "HEAD:"+labelsBranch); err != nil {
 		return err
 	}
-	fmt.Printf("attic: pushed %d label(s) to %s on %s\n", len(local), labelsBranch, remote)
+	fmt.Printf("attic: pushed %d label(s) to %s on %s\n", len(doc.Hosts), labelsBranch, remote)
 	return nil
 }
 
