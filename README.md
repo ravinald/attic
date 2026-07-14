@@ -97,6 +97,7 @@ attic clone git@github.com:ravinald/myrepo-attic.git
 | `attic where [--fp]` | Print bare path, fingerprint, remote. |
 | `attic label get` | Print the display name: local override, else shared/auto name, else basename. |
 | `attic label set <name>` / `--unset` | Set (or clear) a per-machine display override in `~/.config/attic` — never pushed. |
+| `attic label reset [--force]` | Clear ALL local overrides on this machine (force-reset to shared/auto names); lists them without `--force`. |
 | `attic labels edit` | Edit the whole shared map in `$EDITOR`; validates, regenerates the README, publishes on save. |
 | `attic labels push` / `attic labels pull` | Contribute new overlays to the map (never overwrites) / cache the map's names locally. |
 | `attic doctor [--fix] [--force] [--push]` | Audit every overlay's label against its origin remote; report drift, `--fix` corrects it, `--push` publishes the corrected map. |
@@ -148,7 +149,7 @@ attic doctor --fix --force   # also adopt the origin slug over a label you set b
 attic doctor --fix --push    # ...and publish the corrected map to each affected mono remote
 ```
 
-`doctor` only reconciles the auto (origin-derived) label in local `meta.toml`; it never touches your `~/.config/attic` overrides or a curated name in the shared map (push is contribute-only). Plain `--fix` stays local, so hooks and offline runs never touch the network; add `--push` to chain `attic labels push` for the mono remotes whose overlays changed.
+`doctor` reconciles only the auto (origin-derived) label in local `meta.toml`; it never touches a curated name in the shared map (push is contribute-only). An overlay with a **local override** is reported as `overridden` and left entirely alone — doctor honours your local choice. To hand it back to doctor, clear the override with `attic label reset`. Plain `--fix` stays local, so hooks and offline runs never touch the network; add `--push` to chain `attic labels push` for the mono remotes whose overlays changed.
 
 Three commands manage the shared map on `_attic/labels`:
 

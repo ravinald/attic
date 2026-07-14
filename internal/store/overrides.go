@@ -53,6 +53,18 @@ func LoadOverrides() (map[string]string, error) {
 	return d.Overrides, nil
 }
 
+// ClearOverrides removes every local override on this machine by deleting the overrides file.
+func ClearOverrides() error {
+	p, err := OverridesPath()
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("store: remove overrides %s: %w", p, err)
+	}
+	return nil
+}
+
 // SetOverride sets fp's local label, or removes it when label is empty. Writes atomically.
 func SetOverride(fp, label string) error {
 	cur, err := LoadOverrides()

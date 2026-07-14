@@ -44,3 +44,22 @@ func TestOverridesRoundTrip(t *testing.T) {
 		t.Fatalf("unset dropped the wrong key: %v", ov)
 	}
 }
+
+func TestClearOverrides(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	if err := ClearOverrides(); err != nil {
+		t.Fatalf("ClearOverrides on empty: %v", err)
+	}
+	if err := SetOverride("abc", "x"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ClearOverrides(); err != nil {
+		t.Fatalf("ClearOverrides: %v", err)
+	}
+	ov, _ := LoadOverrides()
+	if len(ov) != 0 {
+		t.Fatalf("expected no overrides after clear, got %v", ov)
+	}
+}

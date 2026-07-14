@@ -97,6 +97,45 @@ with 'attic labels edit'. Use --unset to drop the override and fall back to the 
 	},
 }
 
+var labelResetFlags struct {
+	force bool
+}
+
+var labelResetCmd = &cobra.Command{
+	Use:   "reset",
+	Short: "Clear ALL local label overrides on this machine (force-reset to the shared/auto names).",
+	Long: `Wipes ~/.config/attic/overrides.toml, so every overlay falls back to its shared-map or
+auto-derived name. Without --force it only lists what would be cleared.`,
+	Args: cobra.NoArgs,
+	RunE: func(_ *cobra.Command, _ []string) error {
+		ov, err := store.LoadOverrides()
+		if err != nil {
+			return err
+		}
+		if len(ov) == 0 {
+			fmt.Println("attic: no local overrides to clear")
+			return nil
+		}
+		fps := make([]string, 0, len(ov))
+		for fp := range ov {
+			fps = append(fps, fp)
+		}
+		sort.Strings(fps)
+		if !labelResetFlags.force {
+			fmt.Printf("attic: %d local override(s) would be cleared (pass --force to apply):\n", len(ov))
+			for _, fp := range fps {
+				fmt.Printf("  %s  %s\n", fp, ov[fp])
+			}
+			return nil
+		}
+		if err := store.ClearOverrides(); err != nil {
+			return err
+		}
+		fmt.Printf("attic: cleared %d local override(s) — names fall back to the shared map\n", len(ov))
+		return nil
+	},
+}
+
 // resolveLabel is an overlay's display name in precedence order: a local override, then the auto or
 // last-pulled label in meta, then the host basename. resolveLabelWith avoids a per-row overrides read.
 func resolveLabel(m store.Meta) string {
@@ -418,7 +457,8 @@ func validLabel(s string) error {
 
 func init() {
 	labelSetCmd.Flags().BoolVar(&labelSetFlags.unset, "unset", false, "Clear the local override and fall back to the map/auto name.")
-	labelCmd.AddCommand(labelGetCmd, labelSetCmd)
+	labelResetCmd.Flags().BoolVar(&labelResetFlags.force, "force", false, "Actually clear the overrides (without it, only lists them).")
+	labelCmd.AddCommand(labelGetCmd, labelSetCmd, labelResetCmd)
 	labelsCmd.AddCommand(labelsPushCmd, labelsPullCmd)
 	root.AddCommand(labelCmd)
 	root.AddCommand(labelsCmd)

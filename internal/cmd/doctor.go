@@ -62,9 +62,10 @@ Plain --fix stays local — offline and CI runs never touch the network unless y
 			return nil
 		}
 
+		overrides, _ := store.LoadOverrides()
 		var findings []finding
 		for _, m := range metas {
-			if f := classify(m); f != nil {
+			if f := classify(m, overrides); f != nil {
 				findings = append(findings, *f)
 			}
 		}
@@ -92,7 +93,7 @@ Plain --fix stays local — offline and CI runs never touch the network unless y
 		applied, skipped, remotes := applyFindings(findings)
 		fmt.Printf("attic: fixed %d overlay(s)\n", applied)
 		if len(skipped) > 0 {
-			fmt.Println("attic: left untouched (advisory — rerun with --force to adopt manual labels, or resolve by hand):")
+			fmt.Println("attic: left untouched (advisory — overridden locally, a manual label needing --force, or an anomaly to resolve by hand):")
 			printFindings(os.Stdout, skipped)
 		}
 		if !doctorFlags.push {
@@ -113,14 +114,19 @@ Plain --fix stays local — offline and CI runs never touch the network unless y
 	},
 }
 
-// classify inspects one overlay and returns its finding, or nil when nothing is wrong.
-func classify(m store.Meta) *finding {
+// classify inspects one overlay and returns its finding, or nil when nothing is wrong. An overlay
+// with a local override is reported as such and left untouched — doctor honours the local choice.
+func classify(m store.Meta, overrides map[string]string) *finding {
 	fp := m.Fingerprint
 	if bare, err := store.BareDir(fp); err == nil {
 		if _, err := os.Stat(bare); err != nil {
 			return &finding{fp: fp, label: m.DisplayLabel(), kind: "bare-missing", anomaly: true,
 				detail: "overlay storage missing at " + bare}
 		}
+	}
+	if ov, ok := overrides[fp]; ok {
+		return &finding{fp: fp, label: ov, kind: "overridden", anomaly: true,
+			detail: fmt.Sprintf("local override %q — left alone (clear with `attic label reset`, or manage the map via `attic labels edit`)", ov)}
 	}
 	if _, err := os.Stat(m.HostRoot); err != nil {
 		return &finding{fp: fp, label: m.DisplayLabel(), kind: "host-missing", anomaly: true,
