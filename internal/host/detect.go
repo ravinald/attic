@@ -64,6 +64,69 @@ func (r Repo) Name() string {
 	return parts[len(parts)-1]
 }
 
+// OwnerRepo parses this repo's origin URL into an "owner/repo" slug. ok is false when there is no
+// origin or the URL can't be parsed into a slug.
+func (r Repo) OwnerRepo() (string, bool) {
+	return ParseOwnerRepo(r.OriginURL)
+}
+
+// ParseOwnerRepo reduces a git remote URL to its "owner/repo" path, stripping scheme, host, and a
+// trailing ".git". It returns ok=false for empty or unparseable URLs. GitLab subgroups yield a
+// multi-segment slug (group/sub/repo) — kept as-is, since it's still the unambiguous project path.
+func ParseOwnerRepo(url string) (string, bool) {
+	_, path, ok := splitRemote(url)
+	return path, ok
+}
+
+// WebBase converts a git remote URL to its https browse root ("https://host/owner/repo"). It returns
+// ok=false when the URL can't be parsed. Used to build clickable links for the mono-remote map.
+func WebBase(url string) (string, bool) {
+	host, path, ok := splitRemote(url)
+	if !ok {
+		return "", false
+	}
+	return "https://" + host + "/" + path, true
+}
+
+// splitRemote breaks a git remote URL into its host and "owner/repo" path, tolerating both scp-like
+// (git@host:owner/repo.git) and URL (https://host/owner/repo.git, ssh://git@host/owner/repo) shapes.
+func splitRemote(raw string) (host, path string, ok bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", "", false
+	}
+	raw = strings.TrimSuffix(strings.TrimRight(raw, "/"), ".git")
+
+	if _, rest, found := strings.Cut(raw, "://"); found {
+		hostPart, p, ok := strings.Cut(rest, "/")
+		if !ok {
+			return "", "", false
+		}
+		if _, h, ok := strings.Cut(hostPart, "@"); ok {
+			hostPart = h // drop userinfo (ssh://git@host/...)
+		}
+		host, path = hostPart, strings.TrimLeft(p, "/")
+	} else if _, rest, ok := strings.Cut(raw, "@"); ok {
+		host, path, ok = strings.Cut(rest, ":") // host:owner/repo
+		if !ok {
+			return "", "", false
+		}
+		path = strings.TrimLeft(path, "/")
+	} else {
+		return "", "", false
+	}
+
+	if host == "" || path == "" || strings.IndexByte(path, '/') < 0 {
+		return "", "", false
+	}
+	for _, r := range path {
+		if r == ' ' || r == '\t' {
+			return "", "", false
+		}
+	}
+	return host, path, true
+}
+
 func runGit(dir string, args ...string) (string, error) {
 	c := exec.Command("git", args...)
 	c.Dir = dir

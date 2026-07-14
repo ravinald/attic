@@ -9,12 +9,19 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+// Label provenance values for Meta.LabelSource.
+const (
+	LabelSourceOrigin = "origin" // derived from the host repo's origin remote
+	LabelSourceManual = "manual" // set by hand via `attic label set`
+)
+
 // Meta is the per-overlay metadata persisted alongside the bare repo.
 type Meta struct {
 	Fingerprint string    `toml:"fingerprint"`
 	HostRoot    string    `toml:"host_root"`
 	HostName    string    `toml:"host_name"`
-	Label       string    `toml:"label,omitempty"` // user-editable display name; falls back to HostName
+	Label       string    `toml:"label,omitempty"`        // user-editable display name; falls back to HostName
+	LabelSource string    `toml:"label_source,omitempty"` // "origin" = auto-derived from origin_url, "manual" = user-set
 	OriginURL   string    `toml:"origin_url,omitempty"`
 	Remote      string    `toml:"remote,omitempty"`
 	Branch      string    `toml:"branch,omitempty"` // "main" for per-repo, "host/<fp>" for mono

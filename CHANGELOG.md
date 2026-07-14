@@ -18,6 +18,9 @@ Initial public release.
 - `attic where [--fp]` — print bare path, fingerprint, branch, remote.
 - `attic exec -- <git-args>` — escape hatch.
 - `attic version` — version, commit, build date (baked via `-ldflags`).
+- Labels now auto-derive from the host repo's origin as `owner/repo` at `init`/`clone` — no manual `attic label set` for the common case. Provenance is tracked (`label_source = origin|manual`) so a hand-set label is never silently overwritten. `attic label set` still accepts any name, and a label may now contain `/` (an `owner/repo` slug); leading/trailing `/`, `//`, and `..` segments stay rejected.
+- `attic doctor [--fix] [--force]` — sweeps every overlay on the machine and reports labels that drifted from their origin slug (or origins that moved). Reports by default and exits non-zero on fixable drift (hook-friendly); `--fix` rewrites auto-derived labels and refreshes moved origins; `--force` also adopts the origin slug over a hand-set label. Touches only local meta — run `attic labels push` to publish.
+- `attic labels push` now also writes a `README.md` on the `_attic/labels` branch: a markdown table linking each `owner/repo` label to its `host/<fp>` branch, so the mono remote is browsable on the web without decoding `labels.toml`.
 
 ### Quality
 

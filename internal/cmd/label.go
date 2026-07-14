@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/ravinald/attic/internal/gitwrap"
+	"github.com/ravinald/attic/internal/host"
 	"github.com/ravinald/attic/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -20,6 +22,7 @@ import (
 const (
 	labelsBranch = "_attic/labels"
 	labelsFile   = "labels.toml"
+	labelsReadme = "README.md"
 )
 
 // labelsDoc is the on-wire shape of labels.toml on the mono remote.
@@ -71,6 +74,7 @@ var labelSetCmd = &cobra.Command{
 			return err
 		}
 		m.Label = label
+		m.LabelSource = store.LabelSourceManual
 		if err := store.SaveMeta(m); err != nil {
 			return err
 		}
@@ -114,7 +118,10 @@ var labelsPushCmd = &cobra.Command{
 		if err := writeLabelsDoc(filepath.Join(dir, labelsFile), merged); err != nil {
 			return err
 		}
-		if err := repo.Stream("add", labelsFile); err != nil {
+		if err := writeLabelsReadme(filepath.Join(dir, labelsReadme), merged, m.Remote); err != nil {
+			return err
+		}
+		if err := repo.Stream("add", labelsFile, labelsReadme); err != nil {
 			return err
 		}
 
@@ -305,18 +312,62 @@ func writeLabelsDoc(path string, d labelsDoc) error {
 	return os.Rename(tmp, path)
 }
 
-// validLabel rejects empty strings, internal whitespace, and path separators.
+// writeLabelsReadme renders the fingerprint→label map as a markdown table so the mono remote is
+// browsable on the web: each row links to the overlay's host/<fp> branch. The link base is derived
+// from the mono remote URL; if it can't be parsed, the branch is shown as plain text. Written to the
+// _attic/labels branch only — never a host/<fp> branch, whose checkout lands in the host work tree.
+func writeLabelsReadme(path string, d labelsDoc, remote string) error {
+	webBase, hasWeb := host.WebBase(remote)
+	fps := make([]string, 0, len(d.Hosts))
+	for fp := range d.Hosts {
+		fps = append(fps, fp)
+	}
+	sort.Strings(fps)
+
+	var b strings.Builder
+	b.WriteString("# attic overlays\n\n")
+	b.WriteString("Fingerprint → label map for the overlays stored on this mono remote. ")
+	b.WriteString("Managed by `attic labels push` — edit via the CLI, not by hand.\n\n")
+	b.WriteString("| Label | Branch | Fingerprint |\n|---|---|---|\n")
+	for _, fp := range fps {
+		branch := "host/" + fp
+		cell := branch
+		if hasWeb {
+			cell = fmt.Sprintf("[%s](%s/tree/%s)", branch, webBase, branch)
+		}
+		fmt.Fprintf(&b, "| %s | %s | `%s` |\n", d.Hosts[fp].Label, cell, fp)
+	}
+
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(b.String()), 0o644); err != nil {
+		return fmt.Errorf("labels: write %s: %w", labelsReadme, err)
+	}
+	return os.Rename(tmp, path)
+}
+
+// validLabel rejects empty strings, whitespace, and backslashes. An interior "/" is allowed so
+// labels can carry an "owner/repo" slug, but leading/trailing slashes, "//", and ".." segments are
+// refused as path-traversal hygiene — labels are display-only today, but nothing should assume so.
 func validLabel(s string) error {
 	if s == "" {
 		return errors.New("label: must not be empty (use a non-empty name)")
+	}
+	if strings.HasPrefix(s, "/") || strings.HasSuffix(s, "/") {
+		return errors.New("label: must not start or end with '/'")
+	}
+	if strings.Contains(s, "//") {
+		return errors.New("label: must not contain '//'")
 	}
 	for _, r := range s {
 		if unicode.IsSpace(r) {
 			return errors.New("label: must not contain whitespace")
 		}
-		if r == '/' || r == '\\' {
-			return errors.New("label: must not contain path separators")
+		if r == '\\' {
+			return errors.New("label: must not contain a backslash")
 		}
+	}
+	if slices.Contains(strings.Split(s, "/"), "..") {
+		return errors.New("label: must not contain a '..' path segment")
 	}
 	return nil
 }
