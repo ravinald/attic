@@ -13,6 +13,13 @@ import (
 	"github.com/ravinald/attic/internal/store"
 )
 
+// overlayBranchPrefix names an overlay's branch on the mono remote. The fingerprint identifies the
+// git repo the overlay backs, so "repo/" reads truer than the original "host/".
+const overlayBranchPrefix = "repo/"
+
+// overlayBranch is the mono-remote branch name for an overlay fingerprint.
+func overlayBranch(fp string) string { return overlayBranchPrefix + fp }
+
 // resolveHost finds the host repo for the current working directory.
 func resolveHost() (host.Repo, error) {
 	cwd, err := os.Getwd()

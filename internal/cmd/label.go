@@ -411,14 +411,15 @@ func writeLabelsReadme(path string, d labelsDoc, remote string) error {
 	b.WriteString("# attic overlays\n\n")
 	b.WriteString("Fingerprint → label map for the overlays stored on this mono remote. ")
 	b.WriteString("Managed by `attic labels push` — edit via the CLI, not by hand.\n\n")
-	b.WriteString("| Label | Branch | Fingerprint |\n|---|---|---|\n")
+	b.WriteString("| Label | Branch | History | Fingerprint |\n|---|---|---|---|\n")
 	for _, fp := range fps {
-		branch := "host/" + fp
-		cell := branch
+		branch := overlayBranch(fp)
+		branchCell, historyCell := branch, "—"
 		if hasWeb {
-			cell = fmt.Sprintf("[%s](%s/tree/%s)", branch, webBase, branch)
+			branchCell = fmt.Sprintf("[%s](%s/tree/%s)", branch, webBase, branch)
+			historyCell = fmt.Sprintf("[log](%s/commits/%s)", webBase, branch)
 		}
-		fmt.Fprintf(&b, "| %s | %s | `%s` |\n", d.Hosts[fp].Label, cell, fp)
+		fmt.Fprintf(&b, "| %s | %s | %s | `%s` |\n", d.Hosts[fp].Label, branchCell, historyCell, fp)
 	}
 
 	tmp := path + ".tmp"

@@ -28,6 +28,7 @@ Initial public release.
 - `attic init --mono-remote` now bootstraps a fresh mono repo: seeds the `_attic/labels` branch (labels.toml + README map) and sets the repo default branch to `_attic/labels` (best-effort via `gh`), so the map is the landing page without manual setup.
 - Labels split into two layers so no machine "owns" an overlay: the shared map on `_attic/labels` (canonical, edited via `attic labels edit`) and per-machine overrides in `~/.config/attic/overrides.toml` that never leave the machine. `attic label set` now writes a local override (`--unset` clears it); `attic label get`/`list` resolve override → shared/auto name → basename. `attic labels push` is contribute-only — it fills in overlays the map hasn't seen, never overwriting a curated name.
 - `attic doctor` honours local overrides — an overridden overlay is reported as `overridden` and left alone, never flagged as drift. `attic label reset [--force]` clears every local override on the machine (lists them without `--force`) to hand overlays back to doctor's auto reconciliation.
+- Overlay branches on a mono remote are now named `repo/<fp>` instead of `host/<fp>` — the fingerprint identifies the git repo, not a host. The browsable map gains a **History** column linking to each branch's commit log.
 
 ### Quality
 

@@ -54,7 +54,7 @@ Two remote shapes:
 
 		branch := "main"
 		if mode == modeMono {
-			branch = "host/" + fp
+			branch = overlayBranch(fp)
 		}
 		if err := (gitwrap.Repo{}).Stream("init", "--bare", "-b", branch, bare); err != nil {
 			return err

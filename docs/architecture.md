@@ -31,13 +31,13 @@ Pro: each overlay is independent. Con: clutter — N overlays = N private repos.
 
 ### Mono (`--mono-remote URL` / `--mono`)
 
-One private remote shared across **all** your overlays. Each host repo's overlay lives on its own branch named `host/<fp>`.
+One private remote shared across **all** your overlays. Each host repo's overlay lives on its own branch named `repo/<fp>`.
 
 ```
 git@github.com:you/attic-overlays.git
   branches:
-    host/a49bee3fa207   ← wifimgr's overlay
-    host/7c4696d0cdcf   ← netbox's overlay
+    repo/a49bee3fa207   ← wifimgr's overlay
+    repo/7c4696d0cdcf   ← netbox's overlay
 ```
 
 Pro: one repo to bootstrap, one URL to remember. Branch names are SHAs so no project names leak. Con: GitHub's branch-switcher UI is awkward when browsing.
@@ -63,11 +63,11 @@ label = "wifimgr"
 label = "netbox"
 ```
 
-The `_attic/` prefix segregates the file from the `host/<fp>` overlay branches and from anything you might create by hand. `attic labels push` reads the local `Label` field from every `meta.toml` pointing at this remote, merges with what's already published, and force-creates a commit on `_attic/labels`. `attic labels pull` does the reverse and updates each local overlay whose fingerprint matches an entry. The branch is optional — local `meta.toml` always wins for the machine you're on, and `attic list` works fine without it.
+The `_attic/` prefix segregates the file from the `repo/<fp>` overlay branches and from anything you might create by hand. `attic labels push` reads the local `Label` field from every `meta.toml` pointing at this remote, merges with what's already published, and force-creates a commit on `_attic/labels`. `attic labels pull` does the reverse and updates each local overlay whose fingerprint matches an entry. The branch is optional — local `meta.toml` always wins for the machine you're on, and `attic list` works fine without it.
 
 ### Multiple machines, same host repo
 
-A host repo cloned on two machines has the same root commit, the same fingerprint, and therefore the **same** `host/<fp>` branch on the mono remote. There is no per-machine branch. Day-to-day this is just normal git collaboration on one branch — push from work, pull on home, commit, push back.
+A host repo cloned on two machines has the same root commit, the same fingerprint, and therefore the **same** `repo/<fp>` branch on the mono remote. There is no per-machine branch. Day-to-day this is just normal git collaboration on one branch — push from work, pull on home, commit, push back.
 
 Use `attic sync` for the steady-state loop (`fetch` + `rebase` + `push`, refuses dirty work tree). For the trickier first-time case where both machines already have a populated overlay path *before* either has pushed, see [two-machine-bootstrap.md](two-machine-bootstrap.md).
 

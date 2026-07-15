@@ -12,15 +12,15 @@ Identity is the root commit SHA. A repo with zero commits has no root. Make a fi
 
 Most likely a symlink mismatch: macOS's `/var` is a symlink to `/private/var`, so `mktemp` paths and `git rev-parse --show-toplevel` can disagree on the canonical form. `attic` resolves both sides via `EvalSymlinks`, so this should be fixed — if you still see it, the path you're adding is genuinely outside the host repo (e.g. you typed `../other/file`).
 
-## `attic clone --mono` says "no overlay branch host/<fp>"
+## `attic clone --mono` says "no overlay branch repo/<fp>"
 
 The host repo on this machine has a fingerprint that doesn't exist on the mono remote. Causes:
 - Overlay was never pushed from any other machine yet — run `attic init --mono-remote <url>` here instead.
-- The host repo has been rebased to rewrite its root commit, so the fingerprint changed. List branches on the remote (`git ls-remote <url> 'host/*'`) and either rename one or start fresh.
+- The host repo has been rebased to rewrite its root commit, so the fingerprint changed. List branches on the remote (`git ls-remote <url> 'repo/*'`) and either rename one or start fresh.
 
 ## `git push` is rejected: "non-fast-forward"
 
-Two machines pushed to the same `host/<fp>` branch without one pulling first. Standard git: `attic pull`, resolve any conflicts, `attic push` again.
+Two machines pushed to the same `repo/<fp>` branch without one pulling first. Standard git: `attic pull`, resolve any conflicts, `attic push` again.
 
 ## An overlay path keeps showing up staged in the host repo
 
@@ -51,7 +51,7 @@ mv ~/.local/share/attic/repos/<old-fp>/ ~/.local/share/attic/repos/<new-fp>/
 For mono mode, also rename the branch on the remote:
 
 ```sh
-attic exec -- push origin <old-branch>:host/<new-fp>
+attic exec -- push origin <old-branch>:repo/<new-fp>
 attic exec -- push origin --delete <old-branch>
 ```
 
