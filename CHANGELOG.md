@@ -31,6 +31,8 @@ Initial public release.
 - Overlay branches on a mono remote are now named `repo/<fp>` instead of `host/<fp>` — the fingerprint identifies the git repo, not a host. The browsable map gains a **History** column linking to each branch's commit log.
 - `attic labels edit/push/pull` now work from anywhere, not just inside a mono overlay's repo — they fall back to the machine's sole mono remote, and take a `--remote <url>` to disambiguate when there's more than one.
 - Fixed a silent data-loss footgun: `openLabelsWorktree` swallowed an `ls-remote` error and treated an unreachable remote as an absent branch, so a transient network blip during `labels edit`/`push` could publish a localhost-only map and prune every entry for an overlay not cloned locally. It now aborts on that error instead.
+- `attic clone --mono` may now omit the remote URL — it defaults to this machine's sole mono remote, matching the `labels` commands. Pass the URL explicitly when the machine has more than one mono remote.
+- Fixed `attic clone --mono` leaving the overlay with no upstream: `git clone --bare` sets no fetch refspec or remote-tracking refs, so the overlay reported `no-upstream` and couldn't compute sync state or pull. Clone now restores the standard refspec and sets the branch's upstream, matching what `attic init` produces.
 
 ### Quality
 
