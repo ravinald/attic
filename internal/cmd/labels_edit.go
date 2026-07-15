@@ -24,11 +24,11 @@ Local overlays not yet in the map are surfaced so you can name them here too. Ed
 it as a manual label locally, so a later 'attic labels push' won't revert it.`,
 	Args: cobra.NoArgs,
 	RunE: func(_ *cobra.Command, _ []string) error {
-		m, err := currentMonoMeta()
+		remote, err := resolveMonoRemote()
 		if err != nil {
 			return err
 		}
-		dir, repo, cleanup, err := openLabelsWorktree(m.Remote)
+		dir, repo, cleanup, err := openLabelsWorktree(remote)
 		if err != nil {
 			return err
 		}
@@ -42,7 +42,7 @@ it as a manual label locally, so a later 'attic labels push' won't revert it.`,
 			doc.Hosts = map[string]labelEntry{}
 		}
 		// Surface local overlays missing from the published map so they can be named in the same pass.
-		for fp, e := range collectLocalLabels(m.Remote) {
+		for fp, e := range collectLocalLabels(remote) {
 			if _, ok := doc.Hosts[fp]; !ok {
 				doc.Hosts[fp] = e
 			}
@@ -56,7 +56,7 @@ it as a manual label locally, so a later 'attic labels push' won't revert it.`,
 			fmt.Println("attic: no label changes")
 			return nil
 		}
-		return writeCommitPushLabels(dir, repo, m.Remote, edited)
+		return writeCommitPushLabels(dir, repo, remote, edited)
 	},
 }
 

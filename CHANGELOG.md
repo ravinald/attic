@@ -29,6 +29,8 @@ Initial public release.
 - Labels split into two layers so no machine "owns" an overlay: the shared map on `_attic/labels` (canonical, edited via `attic labels edit`) and per-machine overrides in `~/.config/attic/overrides.toml` that never leave the machine. `attic label set` now writes a local override (`--unset` clears it); `attic label get`/`list` resolve override → shared/auto name → basename. `attic labels push` is contribute-only — it fills in overlays the map hasn't seen, never overwriting a curated name.
 - `attic doctor` honours local overrides — an overridden overlay is reported as `overridden` and left alone, never flagged as drift. `attic label reset [--force]` clears every local override on the machine (lists them without `--force`) to hand overlays back to doctor's auto reconciliation.
 - Overlay branches on a mono remote are now named `repo/<fp>` instead of `host/<fp>` — the fingerprint identifies the git repo, not a host. The browsable map gains a **History** column linking to each branch's commit log.
+- `attic labels edit/push/pull` now work from anywhere, not just inside a mono overlay's repo — they fall back to the machine's sole mono remote, and take a `--remote <url>` to disambiguate when there's more than one.
+- Fixed a silent data-loss footgun: `openLabelsWorktree` swallowed an `ls-remote` error and treated an unreachable remote as an absent branch, so a transient network blip during `labels edit`/`push` could publish a localhost-only map and prune every entry for an overlay not cloned locally. It now aborts on that error instead.
 
 ### Quality
 
