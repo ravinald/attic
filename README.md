@@ -38,7 +38,7 @@ make install
 
 Two ways to host overlays remotely. Pick one and stay with it.
 
-### Mono remote (recommended) — one shared repo, branch per host
+### Mono remote (recommended) — one shared repo, branch per repo
 
 ```sh
 # One-time setup: a single private repo holds every overlay you'll ever have.
@@ -49,7 +49,7 @@ cd ~/git/wifimgr
 attic init --mono-remote git@github.com:ravinald/attic-overlays.git
 attic add docs-internal/
 attic commit -m "wifimgr notes"
-attic push                       # → branch host/<fingerprint>
+attic push                       # → branch repo/<fingerprint>
 ```
 
 On another machine, after cloning the host repo:
@@ -106,12 +106,12 @@ attic clone git@github.com:ravinald/myrepo-attic.git
 
 ## Labels: naming your overlays
 
-An overlay's identity is the host repo's root-commit SHA — stable, but unreadable. On the mono remote every project is a branch named `host/<fingerprint>`:
+An overlay's identity is the host repo's root-commit SHA — stable, but unreadable. On the mono remote every project is a branch named `repo/<fingerprint>`:
 
 ```
-host/8b88ecad3aa9
-host/3f2a9c1d5e7b
-host/a1b2c3d4e5f6
+repo/8b88ecad3aa9
+repo/3f2a9c1d5e7b
+repo/a1b2c3d4e5f6
 ```
 
 Nothing there tells you which branch is `wifimgr` and which is `attic`. A **label** is a fingerprint → human-name mapping that makes the listing legible without changing where anything is stored.
@@ -134,8 +134,8 @@ attic label set --unset      # drop the override, fall back to the map/auto name
 
 ```
 LABEL              FP            HOST ROOT                BRANCH             SYNC
-ravinald/wifimgr   8b88ecad3aa9  /Users/you/git/wifimgr   host/8b88ecad3aa9  clean
-ravinald/attic     3f2a9c1d5e7b  /Users/you/git/attic     host/3f2a9c1d5e7b  ↑1 ↓0
+ravinald/wifimgr   8b88ecad3aa9  /Users/you/git/wifimgr   repo/8b88ecad3aa9  clean
+ravinald/attic     3f2a9c1d5e7b  /Users/you/git/attic     repo/3f2a9c1d5e7b  ↑1 ↓0
 ```
 
 ### Keeping the map honest: `attic doctor`
@@ -163,12 +163,12 @@ attic labels pull            # cache the map's names into local meta for display
 
 Two caveats worth knowing:
 
-- Labels **don't rename the `host/<fp>` branches** on the remote. The fingerprint stays the branch name — it's the stable, per-clone identity; a label is mutable and per-user, so it'd be a poor branch name. To decode branches from the GitHub UI, browse the `_attic/labels` branch: `attic labels push` writes a `README.md` there — a table linking each `owner/repo` label to its `host/<fp>` branch — alongside the raw `labels.toml` key.
+- Labels **don't rename the `repo/<fp>` branches** on the remote. The fingerprint stays the branch name — it's the stable, per-clone identity; a label is mutable and per-user, so it'd be a poor branch name. To decode branches from the GitHub UI, browse the `_attic/labels` branch: `attic labels push` writes a `README.md` there — a table linking each `owner/repo` label to its `repo/<fp>` branch — alongside the raw `labels.toml` key.
 - Labels sync is **mono-mode only**. Per-host remotes have nothing shared to publish the map to.
 
 ## Guardrails on the mono remote
 
-A mono remote is an overlay store, not a repo you open PRs against — every `host/<fp>` branch is an independent orphan history, and merging one into another corrupts a repo's overlay. The enforcement is an auto-close-PR Action (a merge-blocking ruleset can't work here — it also blocks `attic push`); see [`docs/mono-remote-guardrails.md`](docs/mono-remote-guardrails.md) for the reasoning and surface-reduction settings, with copy-paste templates under [`examples/mono-remote/`](examples/mono-remote/).
+A mono remote is an overlay store, not a repo you open PRs against — every `repo/<fp>` branch is an independent orphan history, and merging one into another corrupts a repo's overlay. The enforcement is an auto-close-PR Action (a merge-blocking ruleset can't work here — it also blocks `attic push`); see [`docs/mono-remote-guardrails.md`](docs/mono-remote-guardrails.md) for the reasoning and surface-reduction settings, with copy-paste templates under [`examples/mono-remote/`](examples/mono-remote/).
 
 ## The `.gitignore` contract
 

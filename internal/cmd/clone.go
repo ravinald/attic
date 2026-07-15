@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -49,13 +48,13 @@ Refuses to clobber existing files unless --force.`,
 
 		branch := "main"
 		if cloneFlags.mono {
-			branch = "host/" + fp
+			branch = overlayBranch(fp)
 			// Pre-flight: confirm the branch exists on the mono remote so the user gets a useful error.
-			out, err := exec.Command("git", "ls-remote", remote, branch).Output()
+			has, err := remoteHasBranch(gitwrap.Repo{}, remote, branch)
 			if err != nil {
-				return fmt.Errorf("clone: ls-remote %s: %w", remote, err)
+				return err
 			}
-			if strings.TrimSpace(string(out)) == "" {
+			if !has {
 				return fmt.Errorf("clone: no overlay branch %s on %s — run `attic init --mono-remote %s` instead", branch, remote, remote)
 			}
 			if err := (gitwrap.Repo{}).Stream("clone", "--bare", "--branch", branch, "--single-branch", remote, bare); err != nil {
