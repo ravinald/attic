@@ -311,6 +311,12 @@ func resolveMonoRemote() (string, error) {
 			}
 		}
 	}
+	return soleMonoRemote()
+}
+
+// soleMonoRemote returns the one mono remote this machine's overlays point at. It errors when there
+// are none (nothing to act on) or more than one (ambiguous) — the caller then wants an explicit URL.
+func soleMonoRemote() (string, error) {
 	metas, err := store.EnumerateMetas()
 	if err != nil {
 		return "", err
@@ -328,11 +334,11 @@ func resolveMonoRemote() (string, error) {
 	sort.Strings(remotes)
 	switch len(remotes) {
 	case 0:
-		return "", errors.New("labels: no mono-remote overlays on this machine — run `attic init --mono-remote <url>` first, or pass --remote")
+		return "", errors.New("no mono-remote overlays on this machine — pass the remote URL explicitly, or run `attic init --mono-remote <url>` first")
 	case 1:
 		return remotes[0], nil
 	default:
-		return "", fmt.Errorf("labels: this machine has more than one mono remote — cd into one's repo or pass --remote:\n  %s", strings.Join(remotes, "\n  "))
+		return "", fmt.Errorf("this machine has more than one mono remote — pass the remote URL explicitly:\n  %s", strings.Join(remotes, "\n  "))
 	}
 }
 

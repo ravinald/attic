@@ -19,17 +19,29 @@ var cloneFlags struct {
 }
 
 var cloneCmd = &cobra.Command{
-	Use:   "clone <remote>",
+	Use:   "clone [remote]",
 	Short: "Restore an existing overlay into the current host repo from its remote.",
 	Long: `Clones the bare overlay locally and checks out tracked paths into the host work tree.
 
 For a per-host-repo remote (default): clones the whole bare from <remote>.
-For a shared mono remote (--mono): clones only the host/<fp> branch from <remote>, where <fp> is the host repo's fingerprint.
+For a shared mono remote (--mono): clones only the repo/<fp> branch from <remote>, where <fp> is the host repo's fingerprint. With --mono the remote may be omitted when this machine already has exactly one mono remote.
 
 Refuses to clobber existing files unless --force.`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
-		remote := args[0]
+		var remote string
+		switch {
+		case len(args) == 1:
+			remote = args[0]
+		case cloneFlags.mono:
+			r, err := soleMonoRemote()
+			if err != nil {
+				return fmt.Errorf("clone: %w", err)
+			}
+			remote = r
+		default:
+			return fmt.Errorf("clone: a remote URL is required (or use --mono to default to this machine's mono remote)")
+		}
 		hr, err := resolveHost()
 		if err != nil {
 			return err
@@ -72,6 +84,18 @@ Refuses to clobber existing files unless --force.`,
 				return err
 			}
 			if err := repo.Stream("config", "push.autoSetupRemote", "true"); err != nil {
+				return err
+			}
+			// `git clone --bare` sets no fetch refspec and no remote-tracking refs, so the overlay would
+			// report no-upstream and couldn't compute sync state or pull. Restore the standard refspec
+			// `git init` + `remote add` would have given it, then fetch and set the branch's upstream.
+			if err := repo.Stream("config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"); err != nil {
+				return err
+			}
+			if err := repo.Stream("fetch", "origin"); err != nil {
+				return err
+			}
+			if err := repo.Stream("branch", "--set-upstream-to=origin/"+branch, branch); err != nil {
 				return err
 			}
 		}

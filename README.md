@@ -56,11 +56,11 @@ On another machine, after cloning the host repo:
 
 ```sh
 cd ~/git/wifimgr
-attic clone --mono git@github.com:ravinald/attic-overlays.git
+attic clone --mono               # defaults to this machine's sole mono remote
 ls docs-internal/                # back
 ```
 
-The fingerprint (host repo's root commit SHA) is the branch name on the shared remote, so the same `attic clone --mono <url>` works across all your projects without remembering names.
+The fingerprint (host repo's root commit SHA) is the branch name on the shared remote, so `attic clone --mono` works across all your projects without remembering names or URLs. Pass the URL explicitly if this machine tracks more than one mono remote.
 
 ### Per-host remote — one private GitHub repo per project
 
@@ -85,7 +85,7 @@ attic clone git@github.com:ravinald/myrepo-attic.git
 |---|---|
 | `attic init [--remote URL \| --mono-remote URL \| --gh-private]` | Create overlay for the current host repo. |
 | `attic deinit [--force]` | Remove the local overlay + `.gitignore` block (work-tree files stay). Refuses to drop unpushed commits without `--force`. |
-| `attic clone <remote> [--mono]` | Restore an existing overlay on a new machine. |
+| `attic clone [remote] [--mono]` | Restore an existing overlay on a new machine. With `--mono`, the remote defaults to this machine's sole mono remote. |
 | `attic add <path>...` | Stage paths and append to host `.gitignore` block. |
 | `attic rm <path>... [--delete]` | Stop tracking; `--delete` also removes the file. |
 | `attic eject [--check]` | Evict managed paths from the **host** index (never from disk or the overlay); `--check` reports without changing. |
