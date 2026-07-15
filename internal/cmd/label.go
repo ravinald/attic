@@ -150,6 +150,10 @@ func resolveLabelWith(m store.Meta, overrides map[string]string) string {
 	return m.DisplayLabel()
 }
 
+var labelsFlags struct {
+	remote string
+}
+
 // labelsCmd (plural) owns the multi-machine sync over the mono remote.
 var labelsCmd = &cobra.Command{
 	Use:   "labels",
@@ -160,11 +164,11 @@ var labelsPushCmd = &cobra.Command{
 	Use:   "push",
 	Short: "Publish local labels for this mono remote to the _attic/labels branch.",
 	RunE: func(_ *cobra.Command, _ []string) error {
-		m, err := currentMonoMeta()
+		remote, err := resolveMonoRemote()
 		if err != nil {
 			return err
 		}
-		return pushLabelsFor(m.Remote)
+		return pushLabelsFor(remote)
 	},
 }
 
@@ -233,11 +237,11 @@ var labelsPullCmd = &cobra.Command{
 	Use:   "pull",
 	Short: "Cache the shared map's names into local overlay labels (a local override still wins).",
 	RunE: func(_ *cobra.Command, _ []string) error {
-		m, err := currentMonoMeta()
+		remote, err := resolveMonoRemote()
 		if err != nil {
 			return err
 		}
-		dir, _, cleanup, err := openLabelsWorktree(m.Remote)
+		dir, _, cleanup, err := openLabelsWorktree(remote)
 		if err != nil {
 			return err
 		}
@@ -247,7 +251,7 @@ var labelsPullCmd = &cobra.Command{
 			return err
 		}
 		if len(doc.Hosts) == 0 {
-			fmt.Println("attic: no labels published yet on", m.Remote)
+			fmt.Println("attic: no labels published yet on", remote)
 			return nil
 		}
 
@@ -292,20 +296,44 @@ var labelsPullCmd = &cobra.Command{
 	},
 }
 
-// currentMonoMeta loads the current overlay's metadata and refuses non-mono setups.
-func currentMonoMeta() (store.Meta, error) {
-	hr, err := resolveHost()
+// resolveMonoRemote picks the mono remote the labels commands act on. Precedence: the --remote flag,
+// then the overlay for the current directory, then — when cwd isn't an overlay — the single mono
+// remote known to this machine. It errors only when that fallback is ambiguous (more than one) or
+// empty, so `attic labels edit` works from anywhere as long as the target is unambiguous.
+func resolveMonoRemote() (string, error) {
+	if labelsFlags.remote != "" {
+		return labelsFlags.remote, nil
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		if hr, err := host.Detect(cwd); err == nil {
+			if m, err := store.LoadMeta(hr.Fingerprint()); err == nil && m.Mono && m.Remote != "" {
+				return m.Remote, nil
+			}
+		}
+	}
+	metas, err := store.EnumerateMetas()
 	if err != nil {
-		return store.Meta{}, err
+		return "", err
 	}
-	m, err := store.LoadMeta(hr.Fingerprint())
-	if err != nil {
-		return store.Meta{}, err
+	seen := map[string]struct{}{}
+	var remotes []string
+	for _, m := range metas {
+		if m.Mono && m.Remote != "" {
+			if _, ok := seen[m.Remote]; !ok {
+				seen[m.Remote] = struct{}{}
+				remotes = append(remotes, m.Remote)
+			}
+		}
 	}
-	if !m.Mono || m.Remote == "" {
-		return store.Meta{}, errors.New("labels: current overlay is not on a mono remote — labels sync only applies to mono mode")
+	sort.Strings(remotes)
+	switch len(remotes) {
+	case 0:
+		return "", errors.New("labels: no mono-remote overlays on this machine — run `attic init --mono-remote <url>` first, or pass --remote")
+	case 1:
+		return remotes[0], nil
+	default:
+		return "", fmt.Errorf("labels: this machine has more than one mono remote — cd into one's repo or pass --remote:\n  %s", strings.Join(remotes, "\n  "))
 	}
-	return m, nil
 }
 
 // collectLocalLabels returns every local overlay sharing the given mono remote, keyed by fingerprint.
@@ -342,8 +370,15 @@ func openLabelsWorktree(remote string) (string, gitwrap.Repo, func(), error) {
 		cleanup()
 		return "", gitwrap.Repo{}, func() {}, err
 	}
-	// Try to fetch the labels branch; absence is fine — we'll create it as orphan locally.
-	out, _ := repo.Run("ls-remote", "--heads", "origin", labelsBranch)
+	// Fetch the labels branch; genuine absence (empty output, no error) is fine — we create it as an
+	// orphan locally. An ls-remote *error* must abort: treating an unreachable remote as "no branch"
+	// would hand back an empty map, and the caller would then publish a localhost-only map, silently
+	// pruning every entry for an overlay not cloned on this machine.
+	out, err := repo.Run("ls-remote", "--heads", "origin", labelsBranch)
+	if err != nil {
+		cleanup()
+		return "", gitwrap.Repo{}, func() {}, fmt.Errorf("labels: ls-remote %s: %w", remote, err)
+	}
 	if strings.TrimSpace(out) != "" {
 		if err := repo.Stream("fetch", "--depth=1", "origin", labelsBranch); err != nil {
 			cleanup()
@@ -459,6 +494,7 @@ func validLabel(s string) error {
 func init() {
 	labelSetCmd.Flags().BoolVar(&labelSetFlags.unset, "unset", false, "Clear the local override and fall back to the map/auto name.")
 	labelResetCmd.Flags().BoolVar(&labelResetFlags.force, "force", false, "Actually clear the overrides (without it, only lists them).")
+	labelsCmd.PersistentFlags().StringVar(&labelsFlags.remote, "remote", "", "Mono remote URL to act on (default: the current overlay's, or the machine's sole mono remote).")
 	labelCmd.AddCommand(labelGetCmd, labelSetCmd, labelResetCmd)
 	labelsCmd.AddCommand(labelsPushCmd, labelsPullCmd)
 	root.AddCommand(labelCmd)
