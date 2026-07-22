@@ -91,7 +91,8 @@ attic clone git@github.com:ravinald/myrepo-attic.git
 | `attic config get\|set\|list [--global] <key> [value]` | Read/write settings. `set` targets the current repo, or `--global` (`~/.config/attic/config.toml`). |
 | `attic eject [--check]` | Evict managed paths from the **host** index (never from disk or the overlay); `--check` reports without changing. |
 | `attic commit [-m <msg>]` | Commit staged overlay changes. Without `-m`, uses a timestamped snapshot message. |
-| `attic status` `push` `pull` `fetch` `log` `diff` | Pass-through to git. |
+| `attic status` | `git status` for the overlay, plus overlay files the host `.gitignore` hides from git. |
+| `attic push` `pull` `fetch` `log` `diff` | Pass-through to git. |
 | `attic sync [--strategy=rebase\|merge]` | Fetch + integrate + push. Refuses on dirty work tree. |
 | `attic ls` | List paths tracked in the overlay. |
 | `attic list [--fetch] [--wide] [--json]` | Show every overlay on this machine with label, fp, sync state. |
@@ -197,6 +198,12 @@ If a path you `attic add` is already ignored by a rule *outside* the block (a `d
 Precedence, highest first: `--on-duplicate` flag › `ATTIC_GITIGNORE_ON_DUPLICATE` env › per-repo (`attic config set gitignore.on_duplicate …`) › global (`--global`) › `warn`. Only slash-equivalent, glob-free rules qualify for `manage` — attic never second-guesses a real pattern like `docs-*`, and never touches lines inside another tool's markers.
 
 The block alone isn't enough: `.gitignore` only suppresses *untracked* paths, so it can't untrack a path already in the host index or stop a `git add -f`. So `attic add` also runs `git rm --cached` against the host after adopting a path, and `attic clone` rewrites the block on restore. If a path is already stuck in the host index (a stray force-add, a pre-`attic` commit), `attic eject` evicts it — working-tree files and overlay history stay put. `attic eject --check` reports without changing, so a pre-commit hook can gate on it.
+
+### The overlay's exclude file
+
+The overlay's work tree is the *whole* host repo, so by default every host file reads as untracked to it. attic writes `/*` into a marker block in the overlay's `info/exclude` to suppress that; `attic add --force` outranks it, so adopting a path still works. Overlays created before this existed are healed on the next command.
+
+That cuts the other way for the paths the overlay owns: the host `.gitignore` outranks `info/exclude`, so git will never volunteer a *new* file under `docs-internal/` — not in `git status`, not with `-uall`. `attic status` asks for those by name and lists them separately, which is the only reason a new changelog doesn't sit there unnoticed until you wonder why it never pushed.
 
 ## Why not vcsh / repoverlay / chezmoi?
 

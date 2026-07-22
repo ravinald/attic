@@ -1,8 +1,12 @@
 package cmd
 
 import (
+	"errors"
+	"strings"
 	"time"
 
+	"github.com/ravinald/attic/internal/gitwrap"
+	"github.com/ravinald/attic/internal/host"
 	"github.com/spf13/cobra"
 )
 
@@ -16,8 +20,11 @@ var commitCmd = &cobra.Command{
 	Use:   "commit",
 	Short: "Commit staged overlay changes.",
 	RunE: func(_ *cobra.Command, args []string) error {
-		_, repo, err := openOverlay()
+		hr, repo, err := openOverlay()
 		if err != nil {
+			return err
+		}
+		if err := preflight(hr, repo, args); err != nil {
 			return err
 		}
 		// An overlay is scratch history — a message rarely earns its keep. Without -m, git would
@@ -36,6 +43,41 @@ var commitCmd = &cobra.Command{
 		gitArgs = append(gitArgs, args...)
 		return repo.Stream(gitArgs...)
 	},
+}
+
+// preflight refuses a commit that would stage nothing. git's own refusal prints "nothing added to
+// commit but untracked files present" followed by the host repo's entire top level, which reads as
+// an attic bug and sends the reader auditing the wrong repo. Say what attic can actually see.
+func preflight(hr host.Repo, repo gitwrap.Repo, paths []string) error {
+	if len(paths) > 0 || commitFlags.all || commitFlags.allowEmpty {
+		return nil
+	}
+	empty, err := repo.Succeeded("diff", "--cached", "--quiet")
+	if err != nil {
+		return err
+	}
+	if !empty {
+		return nil
+	}
+
+	var b strings.Builder
+	b.WriteString("nothing staged for commit")
+	scope, err := overlayScope(hr, repo)
+	if err != nil {
+		return err
+	}
+	untracked, err := untrackedOverlayFiles(repo, scope)
+	if err != nil {
+		return err
+	}
+	for _, f := range untracked {
+		b.WriteString("\n  untracked: " + f)
+	}
+	if len(untracked) > 0 {
+		b.WriteString("\nstage them with `attic add <path>...`")
+	}
+	b.WriteString("\ncommit edits to tracked files with `attic commit -a`")
+	return errors.New(b.String())
 }
 
 func init() {

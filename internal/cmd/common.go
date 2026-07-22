@@ -10,6 +10,7 @@ import (
 
 	"github.com/ravinald/attic/internal/gitwrap"
 	"github.com/ravinald/attic/internal/host"
+	"github.com/ravinald/attic/internal/ignore"
 	"github.com/ravinald/attic/internal/store"
 )
 
@@ -45,7 +46,94 @@ func openOverlay() (host.Repo, gitwrap.Repo, error) {
 		}
 		return hr, gitwrap.Repo{}, fmt.Errorf("stat overlay %s: %w", bare, err)
 	}
+	// Overlays created before the exclude existed would otherwise stay noisy forever, so heal here
+	// rather than only at init — this is the one path every overlay command goes through.
+	if err := ensureOverlayExclude(bare); err != nil {
+		return hr, gitwrap.Repo{}, err
+	}
 	return hr, gitwrap.Repo{GitDir: bare, WorkTree: hr.Root}, nil
+}
+
+// excludeAll suppresses every path the overlay has not explicitly added.
+const excludeAll = "/*"
+
+// ensureOverlayExclude writes attic's block into the overlay's info/exclude. An overlay's work tree
+// is the *entire* host repo, so with no exclude every host file reads as untracked: `attic status`
+// buries the one real change under the host's whole tree, `attic commit` dies with "nothing added to
+// commit but untracked files present", and `attic exec -- add -A` would swallow the host repo.
+// Overlay paths reach the index through `attic add --force`, which outranks this.
+func ensureOverlayExclude(bare string) error {
+	path := filepath.Join(bare, "info", "exclude")
+	blk, err := ignore.Load(path)
+	if err != nil {
+		return err
+	}
+	if blk.Has(excludeAll) {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("overlay exclude: mkdir %s: %w", filepath.Dir(path), err)
+	}
+	blk.Add(excludeAll)
+	return blk.Save()
+}
+
+// overlayScope returns the host-relative top-level paths the overlay owns. Either source alone
+// lies: the .gitignore block can name a path with nothing committed under it yet, and a clone
+// restores tracked files before it rewrites the block — so take the union.
+func overlayScope(hr host.Repo, repo gitwrap.Repo) ([]string, error) {
+	blk, err := ignore.Load(gitignorePath(hr))
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for _, l := range blk.Lines {
+		// A negation re-includes a path the block already claims; as a pathspec it would mean a
+		// literal file named "!foo".
+		if p := strings.Trim(l, "/"); p != "" && !strings.HasPrefix(p, "!") {
+			paths = append(paths, p)
+		}
+	}
+	out, err := repo.Run("ls-files")
+	if err != nil {
+		return nil, err
+	}
+	paths = append(paths, splitLines(out)...)
+	return topLevels(paths), nil
+}
+
+// untrackedOverlayFiles lists files under the overlay's scope that git sees as untracked. They are
+// ignored files by construction — the host .gitignore hides exactly the paths the overlay owns, and
+// it outranks the overlay's own exclude — so a plain `git status` will never volunteer them. attic
+// has to ask by name or a new changelog stays invisible until someone notices it never got pushed.
+func untrackedOverlayFiles(repo gitwrap.Repo, scope []string) ([]string, error) {
+	if len(scope) == 0 {
+		return nil, nil
+	}
+	args := append([]string{"ls-files", "--others", "--ignored", "--exclude-standard", "-z", "--"}, scope...)
+	out, err := repo.Run(args...)
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for f := range strings.SplitSeq(out, "\x00") {
+		if f != "" {
+			files = append(files, f)
+		}
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
+// splitLines splits git's newline-delimited output, dropping the trailing empty element.
+func splitLines(out string) []string {
+	var lines []string
+	for l := range strings.SplitSeq(out, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			lines = append(lines, l)
+		}
+	}
+	return lines
 }
 
 // gitignorePath returns the absolute path to the host repo's .gitignore.
