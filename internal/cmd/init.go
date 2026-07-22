@@ -117,31 +117,32 @@ Two remote shapes:
 			fmt.Println("  remote: (none — set later with `attic exec -- remote add origin <url>`)")
 		}
 		if mode == modeMono {
-			bootstrapMonoLabels(remote)
+			publishMonoLabels(remote)
 		}
 		return nil
 	},
 }
 
-// bootstrapMonoLabels seeds the _attic/labels branch and points the repo's default branch at it the
-// first time an overlay is created against a mono remote. Everything here is best-effort: a fresh
-// overlay is already usable, so network or gh failures downgrade to a printed hint rather than an
-// error that would strand init.
-func bootstrapMonoLabels(remote string) {
+// publishMonoLabels adds this host's label to the shared map on every mono init. On the very first
+// init it also seeds the _attic/labels branch and points the repo's default branch at it so the map
+// is the landing page. Best-effort: a fresh overlay is already usable, so network or gh failures
+// downgrade to a printed hint rather than an error that would strand init.
+func publishMonoLabels(remote string) {
 	out, err := exec.Command("git", "ls-remote", "--heads", remote, labelsBranch).Output()
 	if err != nil {
-		fmt.Printf("attic: skipped labels bootstrap (couldn't reach %s): %v\n", remote, err)
+		fmt.Printf("attic: skipped labels publish (couldn't reach %s): %v\n", remote, err)
 		return
 	}
-	if strings.TrimSpace(string(out)) != "" {
-		return // already set up on a prior init
+	firstInit := strings.TrimSpace(string(out)) == ""
+
+	if err := pushLabelsFor(remote); err != nil {
+		fmt.Printf("attic: labels publish skipped: %v\n", err)
+		return
+	}
+	if !firstInit {
+		return // the push above landed this host; the branch is already the repo's landing page
 	}
 
-	fmt.Printf("attic: bootstrapping the label map on %s ...\n", remote)
-	if err := pushLabelsFor(remote); err != nil {
-		fmt.Printf("attic: labels bootstrap skipped: %v\n", err)
-		return
-	}
 	slug, ok := host.ParseOwnerRepo(remote)
 	if !ok {
 		return
