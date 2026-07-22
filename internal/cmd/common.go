@@ -104,6 +104,37 @@ func topLevels(paths []string) []string {
 	return out
 }
 
+// onDuplicateEnv overrides the on_duplicate policy for a single invocation, below a command flag but
+// above any persisted config.
+const onDuplicateEnv = "ATTIC_GITIGNORE_ON_DUPLICATE"
+
+// onDuplicatePerRepo returns the current host repo's per-repo on_duplicate override, or "" when there
+// is no overlay or no override. Resolution failures collapse to "" — a missing overlay must not block
+// reading the policy, and the higher layers still apply.
+func onDuplicatePerRepo() string {
+	hr, err := resolveHost()
+	if err != nil {
+		return ""
+	}
+	m, err := store.LoadMeta(hr.Fingerprint())
+	if err != nil {
+		return ""
+	}
+	return m.GitignoreOnDuplicate
+}
+
+// envOnDuplicate returns the on_duplicate override from the environment, or "" when unset.
+func envOnDuplicate() string { return os.Getenv(onDuplicateEnv) }
+
+// resolveOnDuplicate resolves the effective on_duplicate policy: flag > env > per-repo > global > default.
+func resolveOnDuplicate(flag string) (string, error) {
+	global, err := store.LoadConfig()
+	if err != nil {
+		return "", err
+	}
+	return store.ResolveOnDuplicate(flag, envOnDuplicate(), onDuplicatePerRepo(), global)
+}
+
 // relativiseToHost converts a list of user-supplied paths into clean, slash-separated
 // paths relative to the host repo root. It refuses paths outside the host root.
 func relativiseToHost(hostRoot string, args []string) ([]string, error) {

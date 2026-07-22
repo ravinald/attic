@@ -86,8 +86,9 @@ attic clone git@github.com:ravinald/myrepo-attic.git
 | `attic init [--remote URL \| --mono-remote URL \| --gh-private]` | Create overlay for the current host repo. |
 | `attic deinit [--force]` | Remove the local overlay + `.gitignore` block (work-tree files stay). Refuses to drop unpushed commits without `--force`. |
 | `attic clone [remote] [--mono]` | Restore an existing overlay on a new machine. With `--mono`, the remote defaults to this machine's sole mono remote. |
-| `attic add <path>...` | Stage paths and append to host `.gitignore` block. |
+| `attic add <path>... [--on-duplicate off\|warn\|manage]` | Stage paths and append to host `.gitignore` block. `--on-duplicate` overrides the policy for redundant outside rules (see below). |
 | `attic rm <path>... [--delete]` | Stop tracking; `--delete` also removes the file. |
+| `attic config get\|set\|list [--global] <key> [value]` | Read/write settings. `set` targets the current repo, or `--global` (`~/.config/attic/config.toml`). |
 | `attic eject [--check]` | Evict managed paths from the **host** index (never from disk or the overlay); `--check` reports without changing. |
 | `attic commit [-m <msg>]` | Commit staged overlay changes. Without `-m`, uses a timestamped snapshot message. |
 | `attic status` `push` `pull` `fetch` `log` `diff` | Pass-through to git. |
@@ -182,6 +183,18 @@ docs-internal/
 ```
 
 Edit the block by hand only at your own risk — `attic add`/`rm` will rewrite it. Content outside the markers is preserved.
+
+### Redundant rules outside the block
+
+If a path you `attic add` is already ignored by a rule *outside* the block (a `docs-internal/` you added by hand before adopting attic), `on_duplicate` governs what happens:
+
+| Mode | Behavior |
+|---|---|
+| `off` | Add to the block, leave the outside rule alone. |
+| `warn` *(default)* | Add to the block, print which outside rule is now redundant. |
+| `manage` | Add to the block **and delete** the redundant outside rule so the block is the single source. |
+
+Precedence, highest first: `--on-duplicate` flag › `ATTIC_GITIGNORE_ON_DUPLICATE` env › per-repo (`attic config set gitignore.on_duplicate …`) › global (`--global`) › `warn`. Only slash-equivalent, glob-free rules qualify for `manage` — attic never second-guesses a real pattern like `docs-*`, and never touches lines inside another tool's markers.
 
 The block alone isn't enough: `.gitignore` only suppresses *untracked* paths, so it can't untrack a path already in the host index or stop a `git add -f`. So `attic add` also runs `git rm --cached` against the host after adopting a path, and `attic clone` rewrites the block on restore. If a path is already stuck in the host index (a stray force-add, a pre-`attic` commit), `attic eject` evicts it — working-tree files and overlay history stay put. `attic eject --check` reports without changing, so a pre-commit hook can gate on it.
 
