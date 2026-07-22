@@ -27,6 +27,9 @@ type Meta struct {
 	Branch      string    `toml:"branch,omitempty"` // "main" for per-repo, "host/<fp>" for mono
 	Mono        bool      `toml:"mono,omitempty"`   // true if remote is a shared mono repo
 	CreatedAt   time.Time `toml:"created_at"`
+
+	GitignoreOnDuplicate string `toml:"gitignore_on_duplicate,omitempty"` // per-repo override of the global on_duplicate policy
+
 }
 
 // DisplayLabel returns the user-set Label, or HostName as a fallback.
