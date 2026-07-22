@@ -7,7 +7,6 @@ import "github.com/spf13/cobra"
 var passthroughs = []struct {
 	use, short string
 }{
-	{"status", "Show overlay status (git status)."},
 	{"push", "Push overlay commits (git push)."},
 	{"pull", "Pull overlay commits (git pull)."},
 	{"fetch", "Fetch overlay refs (git fetch)."},
@@ -17,7 +16,6 @@ var passthroughs = []struct {
 
 func init() {
 	for _, p := range passthroughs {
-		p := p
 		c := &cobra.Command{
 			Use:                p.use,
 			Short:              p.short,

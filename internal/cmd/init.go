@@ -59,6 +59,9 @@ Two remote shapes:
 		if err := (gitwrap.Repo{}).Stream("init", "--bare", "-b", branch, bare); err != nil {
 			return err
 		}
+		if err := ensureOverlayExclude(bare); err != nil {
+			return err
+		}
 		repo := gitwrap.Repo{GitDir: bare, WorkTree: hr.Root}
 
 		remote := initFlags.remote

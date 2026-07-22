@@ -78,6 +78,9 @@ Refuses to clobber existing files unless --force.`,
 			}
 		}
 
+		if err := ensureOverlayExclude(bare); err != nil {
+			return err
+		}
 		repo := gitwrap.Repo{GitDir: bare, WorkTree: hr.Root}
 		if cloneFlags.mono {
 			if err := repo.Stream("config", "push.default", "current"); err != nil {

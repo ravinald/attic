@@ -2,6 +2,7 @@
 package gitwrap
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -47,6 +48,20 @@ func (r Repo) StreamTo(w io.Writer, args ...string) error {
 		return wrap(err, args)
 	}
 	return nil
+}
+
+// Succeeded reports whether git exited zero. It is for the --quiet/--exit-code predicates, where a
+// non-zero exit is an answer rather than a failure; the error return stays reserved for git not
+// running at all. Output is discarded — ask a predicate a question, don't print its reasoning.
+func (r Repo) Succeeded(args ...string) (bool, error) {
+	c := r.cmd(args...)
+	if err := c.Run(); err != nil {
+		if _, ok := errors.AsType[*exec.ExitError](err); ok {
+			return false, nil
+		}
+		return false, wrap(err, args)
+	}
+	return true, nil
 }
 
 func (r Repo) cmd(args ...string) *exec.Cmd {
