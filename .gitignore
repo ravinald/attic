@@ -4,7 +4,6 @@
 
 # Per-developer overlays (CLAUDE.md is project-local per ~/.claude/CLAUDE.md convention)
 /CLAUDE.md
-/docs-internal/
 # BEGIN attic — managed by `attic`, do not edit between markers
 docs-internal
 # END attic
