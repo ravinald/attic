@@ -3,7 +3,7 @@
 Track files alongside a git repo without committing them to it.
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-Status: **alpha**. Latest tag `v0.1.0`; `main` carries unreleased work, including one breaking change — overlay branches moved from `host/<fp>` to `repo/<fp>` and existing remotes need a [one-shot rename](docs/troubleshooting.md#my-mono-remote-has-hostfp-branches-but-attic-looks-for-repofp). This README documents `main`. See [CHANGELOG.md](CHANGELOG.md).
+Status: **alpha**, latest release `v0.2.0`. See [CHANGELOG.md](CHANGELOG.md).
 
 `attic` keeps a per-host-repo *bare* git overlay whose git directory sits outside the host work tree. Overlay files stay in the repo where you actually use them, while their history lives elsewhere on its own remote — and a marker block in the host's `.gitignore` stops them ever leaking upstream.
 
