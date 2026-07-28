@@ -172,6 +172,6 @@ Refuses to clobber existing files unless --force.`,
 
 func init() {
 	cloneCmd.Flags().BoolVar(&cloneFlags.force, "force", false, "Overwrite existing files in the work tree.")
-	cloneCmd.Flags().BoolVar(&cloneFlags.mono, "mono", false, "Treat <remote> as a shared mono repo and clone only branch host/<fp>.")
+	cloneCmd.Flags().BoolVar(&cloneFlags.mono, "mono", false, "Treat <remote> as a shared mono repo and clone only branch repo/<fp>.")
 	root.AddCommand(cloneCmd)
 }

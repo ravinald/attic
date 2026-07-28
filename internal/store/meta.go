@@ -24,7 +24,7 @@ type Meta struct {
 	LabelSource string    `toml:"label_source,omitempty"` // "origin" = auto-derived from origin_url, "manual" = user-set
 	OriginURL   string    `toml:"origin_url,omitempty"`
 	Remote      string    `toml:"remote,omitempty"`
-	Branch      string    `toml:"branch,omitempty"` // "main" for per-repo, "host/<fp>" for mono
+	Branch      string    `toml:"branch,omitempty"` // "main" for per-repo, "repo/<fp>" for mono
 	Mono        bool      `toml:"mono,omitempty"`   // true if remote is a shared mono repo
 	CreatedAt   time.Time `toml:"created_at"`
 

@@ -419,7 +419,7 @@ func writeLabelsDoc(path string, d labelsDoc) error {
 	if err != nil {
 		return fmt.Errorf("labels: create %s: %w", tmp, err)
 	}
-	header := fmt.Sprintf("# attic labels — managed by `attic labels push|pull`.\n# Edits made here are preserved as long as no machine pushes a conflicting label for the same fingerprint.\n# Last touched: %s UTC\n\n", time.Now().UTC().Format(time.RFC3339))
+	header := fmt.Sprintf("# attic labels — rename entries with `attic labels edit`, not by hand.\n# `attic labels push` is contribute-only: it adds unseen fingerprints and never overwrites a name here.\n# Last touched: %s UTC\n\n", time.Now().UTC().Format(time.RFC3339))
 	if _, err := f.WriteString(header); err != nil {
 		_ = f.Close()
 		_ = os.Remove(tmp)
@@ -437,9 +437,9 @@ func writeLabelsDoc(path string, d labelsDoc) error {
 }
 
 // writeLabelsReadme renders the fingerprint→label map as a markdown table so the mono remote is
-// browsable on the web: each row links to the overlay's host/<fp> branch. The link base is derived
+// browsable on the web: each row links to the overlay's repo/<fp> branch. The link base is derived
 // from the mono remote URL; if it can't be parsed, the branch is shown as plain text. Written to the
-// _attic/labels branch only — never a host/<fp> branch, whose checkout lands in the host work tree.
+// _attic/labels branch only — never a repo/<fp> branch, whose checkout lands in the host work tree.
 func writeLabelsReadme(path string, d labelsDoc, remote string) error {
 	webBase, hasWeb := host.WebBase(remote)
 	fps := make([]string, 0, len(d.Hosts))

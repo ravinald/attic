@@ -4,7 +4,7 @@ You wrote `attic`. You haven't used it yet on `ravinald/wifimgr`. The host repo 
 
 ## What not to do
 
-- **`attic init` on both machines and then push from each.** Same `host/<fp>` branch, two unrelated histories — second push gets rejected, and you have to merge with `--allow-unrelated-histories` anyway. Plan for the merge from the start.
+- **`attic init` on both machines and then push from each.** Same `repo/<fp>` branch, two unrelated histories — second push gets rejected, and you have to merge with `--allow-unrelated-histories` anyway. Plan for the merge from the start.
 - **`attic clone --mono` on the second machine without moving its local copy aside first.** Clone refuses to clobber existing files. `--force` overwrites home's edits and you lose work. Don't.
 - **Skipping the fingerprint check.** Both machines must agree on the host repo's root commit. If they don't, you've got a different problem to fix first (rebased root, fork, etc.) — see `troubleshooting.md`.
 
@@ -28,7 +28,7 @@ attic commit -m "wifimgr: docs-internal (work)"
 attic push
 ```
 
-Work's content is now on `origin/host/<fp>`.
+Work's content is now on `origin/repo/<fp>`.
 
 ### 2. On **home**: initialise locally and commit home's copy
 
@@ -48,7 +48,7 @@ Two unrelated histories now exist: work's on the remote, home's local-only.
 ```sh
 attic fetch
 attic exec -- merge --allow-unrelated-histories \
-  origin/host/$(attic where --fp) -m "merge home + work docs-internal"
+  origin/repo/$(attic where --fp) -m "merge home + work docs-internal"
 ```
 
 Files present on only one side: auto-merged.
@@ -100,5 +100,5 @@ Same end state, manual diff tool instead of git's resolver. Use this when the di
 
 - **`.gitignore` block lands on the host work tree.** `attic add` writes the marker block into `wifimgr/.gitignore`. That's a host-repo change. Commit it upstream (`git add .gitignore && git commit -m "ignore docs-internal (attic overlay)"`) so collaborators don't see a perpetually dirty `.gitignore`.
 - **No three-way merge base.** Unrelated histories share no ancestor, so git falls back to a two-way diff on file content. Expect more conflict markers than a routine merge — review every hunk.
-- **Mono branch name is the fingerprint.** That's why both machines push to the same `host/<fp>` and why the fingerprints MUST match in step 0. The branch is the contract.
+- **Mono branch name is the fingerprint.** That's why both machines push to the same `repo/<fp>` and why the fingerprints MUST match in step 0. The branch is the contract.
 - **Per-host remote variant.** If you used `--remote` or `--gh-private` instead of `--mono-remote`, the flow is identical except the branch is `main` and the merge target is `origin/main`. Substitute accordingly.

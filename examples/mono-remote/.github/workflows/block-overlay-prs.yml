@@ -1,6 +1,6 @@
 name: block-overlay-prs
 
-# An attic mono remote is an overlay store: every host/<fp> branch is an
+# An attic mono remote is an overlay store: every repo/<fp> branch is an
 # independent orphan history rooted at a different repo. Merging one into
 # another (or into a base branch) corrupts that repo's overlay tree. There is
 # no legitimate PR on this remote — attic pushes directly via `attic push` /
@@ -23,5 +23,4 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           gh pr close "$PR" --repo "$REPO" --comment \
-          "This is an attic overlay store. Each \`host/<fp>\` branch is an independent orphan history — merging corrupts a repo's overlay tree. PR auto-closed. Use \`attic push\` / \`attic sync\` instead."
-</content>
+          "This is an attic overlay store. Each \`repo/<fp>\` branch is an independent orphan history — merging corrupts a repo's overlay tree. PR auto-closed. Use \`attic push\` / \`attic sync\` instead."
