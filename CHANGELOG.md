@@ -32,7 +32,7 @@ All notable changes to `attic`.
 - `attic doctor [--fix] [--force] [--push]` — audit every overlay's label against its origin's `owner/repo` slug. Reports by default and exits non-zero on fixable drift (hook-friendly); `--fix` rewrites auto-derived labels and refreshes moved origins in local meta; `--force` also adopts the slug over a hand-set label; `--push` publishes the corrected map. Plain `--fix` stays local, so hooks and offline runs never touch the network. An overlay with a local override is reported as `overridden` and left alone.
 - `attic init --mono-remote` bootstraps a fresh mono repo: seeds the `_attic/labels` branch (`labels.toml` plus a browsable README table linking each label to its `repo/<fp>` branch and commit log) and sets the repo default branch to `_attic/labels` via `gh`, so the map is the landing page.
 - The overlay writes `/*` into a marker block in its `info/exclude`. Without it the overlay's work tree — the whole host repo — reads as entirely untracked. Existing overlays are healed on the next command.
-- `attic status` lists untracked files under overlay-owned paths in a separate section. The host `.gitignore` outranks `info/exclude`, so git never reported a new file under `docs-internal/` at all. Suppressed under `--porcelain`/`-s`/`-z` so a parsing caller sees only git's stream.
+- `attic status` lists untracked files under overlay-owned paths in a separate section. The host `.gitignore` outranks `info/exclude`, so git never reported a new file under `notes/` at all. Suppressed under `--porcelain`/`-s`/`-z` so a parsing caller sees only git's stream.
 
 ### Changed
 
@@ -46,7 +46,7 @@ All notable changes to `attic`.
 - Silent data-loss footgun in `labels edit`/`push`: `openLabelsWorktree` swallowed an `ls-remote` error and read an unreachable remote as an absent branch, so a transient network blip could publish a machine-local map and prune every entry for an overlay not cloned locally. It now aborts on that error.
 - `attic clone --mono` left the overlay with no upstream — `git clone --bare` sets no fetch refspec or remote-tracking refs, so the overlay reported `no-upstream` and could neither compute sync state nor pull. Clone now restores the standard refspec and sets the branch's upstream, matching `attic init`.
 - `attic init` publishes the label map on every mono overlay, not only the first one on a remote.
-- `on_duplicate=warn` speaks only for paths a run newly adopts, so re-running `attic add docs-internal` to stage new files under an already-managed directory stays quiet. `manage` still scans every path, so switching to it later absorbs a rule an earlier `off`/`warn` run left behind.
+- `on_duplicate=warn` speaks only for paths a run newly adopts, so re-running `attic add notes/` to stage new files under an already-managed directory stays quiet. `manage` still scans every path, so switching to it later absorbs a rule an earlier `off`/`warn` run left behind.
 
 ## [v0.1.0] — 2026-04-26
 
