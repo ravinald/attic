@@ -2,18 +2,7 @@
 
 All notable changes to `attic`.
 
-## [Unreleased]
-
-### Breaking
-
-- Overlay branches on a mono remote are named `repo/<fp>`, not `host/<fp>` — the fingerprint identifies the git repo, not a host. There is no automatic migration: renaming existing remote branches is a one-shot, deliberately kept out of the tool. For each overlay created before this change:
-
-  ```sh
-  attic exec -- push origin host/$(attic where --fp):repo/$(attic where --fp)
-  attic exec -- push origin --delete host/$(attic where --fp)
-  attic exec -- branch -m repo/$(attic where --fp)
-  # then update `branch` in ~/.local/share/attic/repos/<fp>/meta.toml
-  ```
+## [v0.2.0] — 2026-07-28
 
 ### Added
 
@@ -36,6 +25,7 @@ All notable changes to `attic`.
 
 ### Changed
 
+- Overlay branches on a mono remote are named `repo/<fp>` rather than `host/<fp>` — the fingerprint identifies the git repo, not a host.
 - `attic commit` without `-m` commits with a timestamped `attic snapshot <UTC>` message instead of opening an editor that aborts on an empty message.
 - `attic clone --mono` may omit the remote URL — it defaults to this machine's sole mono remote, matching the `labels` commands. Pass the URL explicitly when the machine tracks more than one.
 - A label may contain `/` (an `owner/repo` slug). Leading and trailing `/`, `//`, and `..` segments stay rejected.

@@ -18,18 +18,6 @@ The host repo on this machine has a fingerprint that doesn't exist on the mono r
 - Overlay was never pushed from any other machine yet — run `attic init --mono-remote <url>` here instead.
 - The host repo has been rebased to rewrite its root commit, so the fingerprint changed. List branches on the remote (`git ls-remote <url> 'repo/*'`) and either rename one or start fresh.
 
-## My mono remote has `host/<fp>` branches, but attic looks for `repo/<fp>`
-
-Overlay branches were renamed from `host/<fp>` to `repo/<fp>`. Migration is a one-shot and deliberately isn't in the tool. Per overlay, from inside its host repo:
-
-```sh
-fp=$(attic where --fp)
-attic exec -- push origin host/$fp:repo/$fp
-attic exec -- push origin --delete host/$fp
-attic exec -- branch -m repo/$fp
-# then set branch = "repo/<fp>" in ~/.local/share/attic/repos/<fp>/meta.toml
-```
-
 ## `git push` is rejected: "non-fast-forward"
 
 Two machines pushed to the same `repo/<fp>` branch without one pulling first. Standard git: `attic pull`, resolve any conflicts, `attic push` again.
