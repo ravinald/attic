@@ -18,6 +18,18 @@ The host repo on this machine has a fingerprint that doesn't exist on the mono r
 - Overlay was never pushed from any other machine yet — run `attic init --mono-remote <url>` here instead.
 - The host repo has been rebased to rewrite its root commit, so the fingerprint changed. List branches on the remote (`git ls-remote <url> 'repo/*'`) and either rename one or start fresh.
 
+## My mono remote has `host/<fp>` branches, but attic looks for `repo/<fp>`
+
+Overlay branches were renamed from `host/<fp>` to `repo/<fp>`. Migration is a one-shot and deliberately isn't in the tool. Per overlay, from inside its host repo:
+
+```sh
+fp=$(attic where --fp)
+attic exec -- push origin host/$fp:repo/$fp
+attic exec -- push origin --delete host/$fp
+attic exec -- branch -m repo/$fp
+# then set branch = "repo/<fp>" in ~/.local/share/attic/repos/<fp>/meta.toml
+```
+
 ## `git push` is rejected: "non-fast-forward"
 
 Two machines pushed to the same `repo/<fp>` branch without one pulling first. Standard git: `attic pull`, resolve any conflicts, `attic push` again.
@@ -30,14 +42,54 @@ A `.gitignore` rule can't untrack a path already in the host index or stop a `gi
 
 Remove it from the host upstream (`git rm --cached path && git commit && git push`), then `attic eject` to keep the index clean going forward. The marker block in `.gitignore` plus `attic add`'s host-index eviction exist precisely to prevent this — check the block is intact and contains the path.
 
+## `attic status` says clean, but I know I added a file
+
+The host `.gitignore` hides overlay-owned paths from git and outranks the overlay's own `info/exclude`, so git will never volunteer a *new* file under `docs-internal/` — not in `git status`, not with `-uall`. `attic status` asks for those by name and prints them under **"Untracked overlay files"** below git's own output. If that section lists your file, it exists but was never staged: `attic add <path>`.
+
+If you piped the command (`--porcelain`, `-s`, `-z`), that section is suppressed by design — it's prose, and it must not land in a stream a script parses. Run it bare to see it.
+
+## `attic commit` says "nothing staged for commit"
+
+Edits to already-tracked overlay files aren't staged automatically. Use `attic commit -a`. New files need `attic add` first — the error lists any it can see.
+
+## `attic labels push` didn't rename my overlay
+
+`push` is **contribute-only**: it fills in fingerprints the shared map has never seen and never overwrites an existing entry. That's deliberate — it's what stops one machine's push clobbering a name someone curated. To rename an existing entry, use `attic labels edit`, the only writer allowed to overwrite.
+
+If the name is only wrong on *this* machine, you want a local override instead: `attic label set <name>` (never pushed).
+
+## `attic doctor` reports an overlay as `overridden` and won't fix it
+
+The overlay has a local override in `~/.config/attic/overrides.toml`, and doctor honours your local choice over the origin slug. To hand it back to doctor's auto reconciliation, clear the override with `attic label reset` (it lists what it would clear unless you pass `--force`).
+
+## `attic labels` says "this machine has more than one mono remote"
+
+The `labels` commands resolve the remote from the current overlay, then fall back to the machine's sole mono remote. With two or more, that fallback is ambiguous — name it: `attic labels push --remote git@github.com:you/attic-overlays.git`. Or run the command from inside a host repo whose overlay already points at the remote you mean.
+
+## `attic add` warns that a `.gitignore` rule is now redundant
+
+You hand-wrote an ignore rule for that path before adopting attic, so the managed block now shadows it. Harmless, but two sources of truth. Absorb the old rule:
+
+```sh
+attic config set gitignore.on_duplicate manage    # this repo
+attic add docs-internal/                          # deletes the redundant outside rule
+```
+
+`manage` only touches slash-equivalent, glob-free rules — a real pattern like `docs-*` is never second-guessed, and lines inside another tool's markers are left alone. Silence the notice without changing anything with `off`.
+
 ## I want to remove an overlay entirely
 
 ```sh
-fp=$(attic where --fp)
-rm -rf ~/.local/share/attic/repos/$fp
+attic deinit          # from inside the host repo
 ```
 
-The marker block in the host's `.gitignore` stays; remove it by hand or with `attic rm` for each path before deleting the overlay state.
+This deletes the bare overlay and its meta, and strips attic's block from the host `.gitignore`. Work-tree files stay on disk — `deinit` forgets how to track them, it doesn't delete them. It refuses when the overlay holds commits not on its remote; `attic push` first, or `--force` if you mean to drop them.
+
+The remote side is untouched. For a mono remote, delete the branch yourself:
+
+```sh
+attic exec -- push origin --delete repo/$(attic where --fp)   # BEFORE deinit — needs the overlay
+```
 
 ## My fingerprint changed because I rebased the root commit
 

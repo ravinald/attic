@@ -27,7 +27,7 @@ var initCmd = &cobra.Command{
 
 Two remote shapes:
   --remote URL        per-host-repo remote (origin/main). One GitHub repo per host.
-  --mono-remote URL   shared remote with one branch per fingerprint (host/<fp>). One GitHub repo for ALL hosts.
+  --mono-remote URL   shared remote with one branch per fingerprint (repo/<fp>). One GitHub repo for ALL hosts.
 
 --gh-private creates a private per-host repo via the gh CLI (mutually exclusive with the others).`,
 	RunE: func(_ *cobra.Command, _ []string) error {
@@ -194,7 +194,7 @@ func resolveMode(remote, monoRemote string, ghPrivate bool) (initMode, error) {
 
 func init() {
 	initCmd.Flags().StringVar(&initFlags.remote, "remote", "", "Per-host-repo remote URL (origin/main).")
-	initCmd.Flags().StringVar(&initFlags.monoRemote, "mono-remote", "", "Shared mono remote URL — overlay is pushed to branch host/<fp> on this repo.")
+	initCmd.Flags().StringVar(&initFlags.monoRemote, "mono-remote", "", "Shared mono remote URL — overlay is pushed to branch repo/<fp> on this repo.")
 	initCmd.Flags().BoolVar(&initFlags.ghPrivate, "gh-private", false, "Create a private per-host GitHub repo via `gh` and use it as origin.")
 	root.AddCommand(initCmd)
 }

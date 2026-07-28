@@ -9,8 +9,17 @@
   repos/
     <root-commit-fp>/                     # 12-char prefix of host repo's root commit SHA
       attic.git/                          # bare overlay
-      meta.toml                           # host_root, branch, remote, mono flag
+      meta.toml                           # fingerprint, host_root, host_name, label,
+                                          # label_source, origin_url, remote, branch,
+                                          # mono, created_at, gitignore_on_duplicate
+
+~/.config/attic/                          # XDG_CONFIG_HOME respected
+  config.toml                             # global settings (gitignore.on_duplicate)
+  overrides.toml                          # per-machine label overrides, never pushed
 ```
+
+Data and config split on purpose: everything under `repos/` is reconstructible from a remote,
+while `overrides.toml` is deliberately machine-local and has nowhere to sync to.
 
 `<root-commit-fp>` is **stable across machines and clones** — the same host repo on three laptops resolves to the same fingerprint, hence the same overlay storage path on each, hence the same overlay branch on the remote. Multi-root repos sort their root commits and take the smallest SHA.
 
@@ -46,11 +55,13 @@ In mono mode, `init` configures `push.default = current` and `push.autoSetupRemo
 
 ### Labels on the mono remote
 
-`attic` reserves a single orphan branch on the mono remote, `_attic/labels`, carrying one TOML file:
+`attic` reserves a single orphan branch on the mono remote, `_attic/labels`, carrying the map and a
+rendering of it:
 
 ```
 _attic/labels
-  labels.toml
+  labels.toml       # the map itself
+  README.md         # generated table: label → repo/<fp> branch → commit log → fingerprint
 ```
 
 Format:
@@ -63,7 +74,28 @@ label = "wifimgr"
 label = "netbox"
 ```
 
-The `_attic/` prefix segregates the file from the `repo/<fp>` overlay branches and from anything you might create by hand. `attic labels push` reads the local `Label` field from every `meta.toml` pointing at this remote, merges with what's already published, and force-creates a commit on `_attic/labels`. `attic labels pull` does the reverse and updates each local overlay whose fingerprint matches an entry. The branch is optional — local `meta.toml` always wins for the machine you're on, and `attic list` works fine without it.
+The `_attic/` prefix segregates these files from the `repo/<fp>` overlay branches and from anything you might create by hand.
+
+Names resolve through two layers, so no machine owns an overlay:
+
+| Layer | Location | Scope |
+|---|---|---|
+| Local override | `~/.config/attic/overrides.toml` | This machine only, never pushed. Written by `attic label set`. |
+| Shared map | `labels.toml` on `_attic/labels` | Canonical across machines. Renamed only by `attic labels edit`. |
+
+`attic label get` and `attic list` resolve **override → shared/auto name → repo basename**.
+
+Three commands move the shared map:
+
+- **`attic labels push`** collects the local `Label` from every `meta.toml` pointing at this remote and merges into what's published — **contribute-only**: a fingerprint already in the map is left alone. That's what stops one machine's push clobbering a curated name, and it means `push` needs no force.
+- **`attic labels pull`** caches the map's names into local meta for display. An override still wins.
+- **`attic labels edit`** opens the whole map in `$EDITOR` as a `<fingerprint>  <label>` table, then validates, regenerates `README.md`, and pushes on save. It is the only way to rename an existing entry — including a "foreign" overlay whose host repo lives on another machine — because it is the only writer allowed to overwrite.
+
+All three run from anywhere: they use the current overlay's remote, fall back to the machine's sole mono remote, and take `--remote <url>` to disambiguate.
+
+The branch is optional — local `meta.toml` always wins for the machine you're on, and `attic list` works fine without it.
+
+`attic doctor` reconciles the other direction: it compares each overlay's label against its host repo's origin slug and reports drift, since origins get renamed and transferred. It only ever writes the auto (origin-derived) label in local `meta.toml`; a curated name in the shared map and an overlay carrying a local override are both left alone. `--push` chains `labels push` for the affected mono remotes.
 
 ### Multiple machines, same host repo
 
@@ -94,6 +126,12 @@ So adoption also evicts. `attic add` runs `git rm --cached --ignore-unmatch` aga
 
 `attic eject` repairs an already-contaminated repo: it evicts every managed path (the union of the ignore-block entries and the overlay's tracked files) from the host index. `attic eject --check` reports without changing anything, exiting non-zero when a managed path is staged as a host addition — the form a pre-commit guard calls.
 
+### The overlay's `info/exclude`
+
+The overlay's work tree is the *whole* host repo, so with no exclusions every host file reads as untracked to it: `attic status` buries the one real change under the host's entire tree, and `attic commit` dies with git's "nothing added to commit but untracked files present". attic writes `/*` into a marker block in the overlay's `info/exclude` to suppress that. The `git add --force` in `attic add` outranks it, so adopting a path still works. `openOverlay` heals overlays created before this existed, rather than only `init` — it's the one code path every overlay command passes through.
+
+That cuts the other way for the paths the overlay owns. The host `.gitignore` outranks `info/exclude`, so git will never volunteer a *new* file under `docs-internal/` — not in `git status`, not with `-uall`. `attic status` therefore asks for them by name (`ls-files --others --ignored --exclude-standard` scoped to overlay-owned paths) and prints them in a separate section, suppressed under `--porcelain`/`-s`/`-z` so a parsing caller sees only git's own stream.
+
 ## Host repo identity (root commit SHA)
 
 Every git repo has at least one root commit (a commit with no parents). For a normal linear repo there's exactly one, and it's the same on every clone. `attic` keys overlay storage off this:
@@ -122,16 +160,23 @@ Edge cases:
 cmd/attic/main.go                 # entry, calls cmd.Execute
 internal/cmd/                     # cobra commands, one file per command
   root.go                         # root command + Execute()
-  init.go clone.go                # state-creating
+  init.go clone.go deinit.go      # state-creating and -destroying
   add.go rm.go eject.go           # gitignore-block-aware; eject clears the host index
-  commit.go ls.go where.go exec.go
-  passthrough.go                  # status/push/pull/fetch/log/diff
-  version.go common.go            # host-git helpers: hostGit, ejectFromHost, topLevels
+  commit.go status.go sync.go     # status/sync surface the overlay's own view
+  ls.go list.go where.go exec.go
+  label.go labels_edit.go         # label resolution + the _attic/labels map
+  doctor.go                       # label-vs-origin drift audit
+  config.go                       # config get/set/list across layers
+  passthrough.go                  # push/pull/fetch/log/diff
+  version.go
+  common.go                       # host-git helpers: hostGit, ejectFromHost, topLevels,
+                                  # overlayScope, ensureOverlayExclude, on_duplicate resolution
 internal/host/detect.go           # find host root, root commit SHA, origin URL; symlink-canonical
-internal/store/                   # XDG-aware paths + meta.toml
+internal/store/                   # XDG-aware paths, meta.toml, config.toml, overrides.toml
 internal/gitwrap/git.go           # exec git with --git-dir/--work-tree (skipped when empty)
-internal/ignore/block.go          # marker-block splice in host .gitignore (atomic write)
-internal/gh/create.go             # best-effort `gh repo create` integration
+internal/ignore/                  # marker-block splice in host .gitignore (atomic write) +
+                                  # duplicate detection for rules outside the block
+internal/gh/create.go             # best-effort `gh` integration (repo create, default branch)
 ```
 
 Each `internal/` package earns its keep with either a non-trivial type (`gitwrap.Repo`, `store.Meta`, `ignore.Block`) or three-plus exports.

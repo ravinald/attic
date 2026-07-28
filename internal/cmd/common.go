@@ -61,7 +61,7 @@ const excludeAll = "/*"
 // is the *entire* host repo, so with no exclude every host file reads as untracked: `attic status`
 // buries the one real change under the host's whole tree, `attic commit` dies with "nothing added to
 // commit but untracked files present", and `attic exec -- add -A` would swallow the host repo.
-// Overlay paths reach the index through `attic add --force`, which outranks this.
+// Overlay paths reach the index through the `git add --force` in `attic add`, which outranks this.
 func ensureOverlayExclude(bare string) error {
 	path := filepath.Join(bare, "info", "exclude")
 	blk, err := ignore.Load(path)

@@ -25,7 +25,7 @@ var syncCmd = &cobra.Command{
 	Short: "Fetch + rebase|merge + push the overlay against its remote.",
 	Long: `Day-to-day multi-machine loop: pulls remote commits, integrates them, pushes local ones.
 
-Default strategy is rebase, which keeps host/<fp> linear. --strategy=merge does a fast-forward-only merge instead (use 'attic exec -- merge' if you actually want a non-FF merge commit).
+Default strategy is rebase, which keeps repo/<fp> linear. --strategy=merge does a fast-forward-only merge instead (use 'attic exec -- merge' if you actually want a non-FF merge commit).
 
 On the very first sync after init, no upstream exists yet — sync still works: it fetches, sees no remote branch, and pushes (push.autoSetupRemote sets up tracking on the way out).
 
