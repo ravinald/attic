@@ -197,6 +197,8 @@ If a path you `attic add` is already ignored by a rule *outside* the block (a `d
 
 Precedence, highest first: `--on-duplicate` flag › `ATTIC_GITIGNORE_ON_DUPLICATE` env › per-repo (`attic config set gitignore.on_duplicate …`) › global (`--global`) › `warn`. Only slash-equivalent, glob-free rules qualify for `manage` — attic never second-guesses a real pattern like `docs-*`, and never touches lines inside another tool's markers.
 
+`warn` speaks only for paths a run actually adopts, so re-running `attic add docs-internal` to stage new files under an already-managed directory stays quiet. `manage` still scans every path, so switching to it after the fact absorbs a rule an earlier `off`/`warn` run left behind.
+
 The block alone isn't enough: `.gitignore` only suppresses *untracked* paths, so it can't untrack a path already in the host index or stop a `git add -f`. So `attic add` also runs `git rm --cached` against the host after adopting a path, and `attic clone` rewrites the block on restore. If a path is already stuck in the host index (a stray force-add, a pre-`attic` commit), `attic eject` evicts it — working-tree files and overlay history stay put. `attic eject --check` reports without changing, so a pre-commit hook can gate on it.
 
 ### The overlay's exclude file
