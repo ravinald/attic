@@ -44,7 +44,7 @@ Remove it from the host upstream (`git rm --cached path && git commit && git pus
 
 ## `attic status` says clean, but I know I added a file
 
-The host `.gitignore` hides overlay-owned paths from git and outranks the overlay's own `info/exclude`, so git will never volunteer a *new* file under `docs-internal/` — not in `git status`, not with `-uall`. `attic status` asks for those by name and prints them under **"Untracked overlay files"** below git's own output. If that section lists your file, it exists but was never staged: `attic add <path>`.
+The host `.gitignore` hides overlay-owned paths from git and outranks the overlay's own `info/exclude`, so git will never volunteer a *new* file under `notes/` — not in `git status`, not with `-uall`. `attic status` asks for those by name and prints them under **"Untracked overlay files"** below git's own output. If that section lists your file, it exists but was never staged: `attic add <path>`.
 
 If you piped the command (`--porcelain`, `-s`, `-z`), that section is suppressed by design — it's prose, and it must not land in a stream a script parses. Run it bare to see it.
 
@@ -72,7 +72,7 @@ You hand-wrote an ignore rule for that path before adopting attic, so the manage
 
 ```sh
 attic config set gitignore.on_duplicate manage    # this repo
-attic add docs-internal/                          # deletes the redundant outside rule
+attic add notes/                                  # deletes the redundant outside rule
 ```
 
 `manage` only touches slash-equivalent, glob-free rules — a real pattern like `docs-*` is never second-guessed, and lines inside another tool's markers are left alone. Silence the notice without changing anything with `off`.

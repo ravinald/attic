@@ -5,7 +5,20 @@ Track files alongside a git repo without committing them to it.
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 Status: **alpha**. Latest tag `v0.1.0`; `main` carries unreleased work, including one breaking change — overlay branches moved from `host/<fp>` to `repo/<fp>` and existing remotes need a [one-shot rename](docs/troubleshooting.md#my-mono-remote-has-hostfp-branches-but-attic-looks-for-repofp). This README documents `main`. See [CHANGELOG.md](CHANGELOG.md).
 
-`attic` keeps a per-host-repo *bare* git overlay outside the host work tree. Files like `docs-internal/`, a project-local `CLAUDE.md`, scratch notes, or a per-machine `.envrc` live in the host work tree where you actually use them — but their history lives elsewhere, on its own remote, and a marker block in the host's `.gitignore` stops them ever leaking upstream.
+`attic` keeps a per-host-repo *bare* git overlay whose git directory sits outside the host work tree. Overlay files stay in the repo where you actually use them, while their history lives elsewhere on its own remote — and a marker block in the host's `.gitignore` stops them ever leaking upstream.
+
+## What goes in an overlay
+
+Anything that belongs *with* a repo but not *in* it — the files you lose on a fresh clone and would rather not justify in a PR:
+
+- **Notes and working docs** — design scratch, a running TODO, investigation logs, whatever you'd keep in a `notes/` or `docs-internal/` directory.
+- **Local dev config** — an `.envrc` for direnv, editor or debugger launch settings, a `Makefile.local` with per-machine paths.
+- **AI assistant instructions** — a project-local `CLAUDE.md`, `AGENTS.md`, or `.cursorrules` that encodes how *you* work rather than house style.
+- **Fork-local scripts and patches** — helpers you never intend to upstream, on a repo you don't control.
+- **Employer or client context on a public repo** — the notes you can't commit to an open-source project.
+- **Build output worth keeping** — benchmark baselines or profiles you want on every machine without bloating the repo.
+
+An overlay is an ordinary git repo on an ordinary remote, so treat it like any private repo: right for notes and config, wrong for secrets. Keep credentials in a secrets manager and have the overlay reference them, not carry them.
 
 ## How it works
 
@@ -46,22 +59,22 @@ Two ways to host overlays remotely. Pick one and stay with it.
 
 ```sh
 # One-time setup: a single private repo holds every overlay you'll ever have.
-gh repo create ravinald/attic-overlays --private
+gh repo create you/attic-overlays --private
 
 # In each host repo:
-cd ~/git/wifimgr
-attic init --mono-remote git@github.com:ravinald/attic-overlays.git
-attic add docs-internal/
-attic commit -m "wifimgr notes"
+cd ~/git/myproject
+attic init --mono-remote git@github.com:you/attic-overlays.git
+attic add notes/ .envrc
+attic commit -m "myproject notes + local env"
 attic push                       # → branch repo/<fingerprint>
 ```
 
 On another machine, after cloning the host repo:
 
 ```sh
-cd ~/git/wifimgr
+cd ~/git/myproject
 attic clone --mono               # defaults to this machine's sole mono remote
-ls docs-internal/                # back
+ls notes/                        # back
 ```
 
 The fingerprint (host repo's root commit SHA) is the branch name on the shared remote, so `attic clone --mono` works across all your projects without remembering names or URLs. Pass the URL explicitly if this machine tracks more than one mono remote.
@@ -69,9 +82,9 @@ The fingerprint (host repo's root commit SHA) is the branch name on the shared r
 ### Per-host remote — one private GitHub repo per project
 
 ```sh
-cd ~/git/myrepo
-attic init --gh-private          # creates ravinald/myrepo-attic via gh
-attic add docs-internal/
+cd ~/git/myproject
+attic init --gh-private          # creates you/myproject-attic via gh
+attic add notes/
 attic commit -m "first overlay"
 attic push
 ```
@@ -79,8 +92,8 @@ attic push
 On another machine:
 
 ```sh
-cd ~/git/myrepo
-attic clone git@github.com:ravinald/myrepo-attic.git
+cd ~/git/myproject
+attic clone git@github.com:you/myproject-attic.git
 ```
 
 ## Commands
@@ -120,7 +133,7 @@ repo/3f2a9c1d5e7b
 repo/a1b2c3d4e5f6
 ```
 
-Nothing there tells you which branch is `wifimgr` and which is `attic`. A **label** is a fingerprint → human-name mapping that makes the listing legible without changing where anything is stored.
+Nothing there tells you which branch is `myproject` and which is `otherproject`. A **label** is a fingerprint → human-name mapping that makes the listing legible without changing where anything is stored.
 
 Labels live in two layers, and no machine "owns" an overlay:
 
@@ -130,18 +143,18 @@ Labels live in two layers, and no machine "owns" an overlay:
 `attic list` and `attic label get` resolve **override → shared/auto name → repo basename**:
 
 ```sh
-cd ~/git/wifimgr
-attic label get              # -> ravinald/wifimgr (from origin; basename if no origin)
-attic label set my-wifi      # a display name for THIS machine only (never pushed)
+cd ~/git/myproject
+attic label get              # -> you/myproject (from origin; basename if no origin)
+attic label set proj         # a display name for THIS machine only (never pushed)
 attic label set --unset      # drop the override, fall back to the map/auto name
 ```
 
 `attic list` then reads by name instead of by SHA:
 
 ```
-LABEL              FP            HOST ROOT                BRANCH             SYNC
-ravinald/wifimgr   8b88ecad3aa9  /Users/you/git/wifimgr   repo/8b88ecad3aa9  clean
-ravinald/attic     3f2a9c1d5e7b  /Users/you/git/attic     repo/3f2a9c1d5e7b  ↑1 ↓0
+LABEL             FP            HOST ROOT                    BRANCH             SYNC
+you/myproject     8b88ecad3aa9  /Users/you/git/myproject     repo/8b88ecad3aa9  clean
+you/otherproject  3f2a9c1d5e7b  /Users/you/git/otherproject  repo/3f2a9c1d5e7b  ↑1 ↓0
 ```
 
 ### Keeping the map honest: `attic doctor`
@@ -182,8 +195,8 @@ A mono remote is an overlay store, not a repo you open PRs against — every `re
 
 ```
 # BEGIN attic — managed by `attic`, do not edit between markers
-CLAUDE.md
-docs-internal/
+.envrc
+notes/
 # END attic
 ```
 
@@ -191,7 +204,7 @@ Edit the block by hand only at your own risk — `attic add`/`rm` will rewrite i
 
 ### Redundant rules outside the block
 
-If a path you `attic add` is already ignored by a rule *outside* the block (a `docs-internal/` you added by hand before adopting attic), `on_duplicate` governs what happens:
+If a path you `attic add` is already ignored by a rule *outside* the block (a `notes/` line you added by hand before adopting attic), `on_duplicate` governs what happens:
 
 | Mode | Behavior |
 |---|---|
@@ -199,9 +212,9 @@ If a path you `attic add` is already ignored by a rule *outside* the block (a `d
 | `warn` *(default)* | Add to the block, print which outside rule is now redundant. |
 | `manage` | Add to the block **and delete** the redundant outside rule so the block is the single source. |
 
-Precedence, highest first: `--on-duplicate` flag › `ATTIC_GITIGNORE_ON_DUPLICATE` env › per-repo (`attic config set gitignore.on_duplicate …`) › global (`--global`) › `warn`. Only slash-equivalent, glob-free rules qualify for `manage` — attic never second-guesses a real pattern like `docs-*`, and never touches lines inside another tool's markers.
+Precedence, highest first: `--on-duplicate` flag › `ATTIC_GITIGNORE_ON_DUPLICATE` env › per-repo (`attic config set gitignore.on_duplicate …`) › global (`--global`) › `warn`. Only slash-equivalent, glob-free rules qualify for `manage` — attic never second-guesses a real pattern like `*.local`, and never touches lines inside another tool's markers.
 
-`warn` speaks only for paths a run actually adopts, so re-running `attic add docs-internal` to stage new files under an already-managed directory stays quiet. `manage` still scans every path, so switching to it after the fact absorbs a rule an earlier `off`/`warn` run left behind.
+`warn` speaks only for paths a run actually adopts, so re-running `attic add notes/` to stage new files under an already-managed directory stays quiet. `manage` still scans every path, so switching to it after the fact absorbs a rule an earlier `off`/`warn` run left behind.
 
 The block alone isn't enough: `.gitignore` only suppresses *untracked* paths, so it can't untrack a path already in the host index or stop a `git add -f`. So `attic add` also runs `git rm --cached` against the host after adopting a path, and `attic clone` rewrites the block on restore. If a path is already stuck in the host index (a stray force-add, a pre-`attic` commit), `attic eject` evicts it — working-tree files and overlay history stay put. `attic eject --check` reports without changing, so a pre-commit hook can gate on it.
 
@@ -209,7 +222,7 @@ The block alone isn't enough: `.gitignore` only suppresses *untracked* paths, so
 
 The overlay's work tree is the *whole* host repo, so by default every host file reads as untracked to it. attic writes `/*` into a marker block in the overlay's `info/exclude` to suppress that; the `git add --force` behind `attic add` outranks it, so adopting a path still works. Overlays created before this existed are healed on the next command.
 
-That cuts the other way for the paths the overlay owns: the host `.gitignore` outranks `info/exclude`, so git will never volunteer a *new* file under `docs-internal/` — not in `git status`, not with `-uall`. `attic status` asks for those by name and lists them separately, which is the only reason a new changelog doesn't sit there unnoticed until you wonder why it never pushed.
+That cuts the other way for the paths the overlay owns: the host `.gitignore` outranks `info/exclude`, so git will never volunteer a *new* file under `notes/` — not in `git status`, not with `-uall`. `attic status` asks for those by name and lists them separately, which is the only reason a file you just wrote doesn't sit there unnoticed until you wonder why it never pushed.
 
 ## Why not vcsh / repoverlay / chezmoi?
 

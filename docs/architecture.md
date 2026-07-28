@@ -32,8 +32,8 @@ Pick one per host repo. Stored in `meta.toml` as `mono = true|false`.
 One private remote per host repo. Branch is `main`. Pushes go straight to `origin/main`.
 
 ```
-git@github.com:you/wifimgr-attic.git       (origin/main)
-git@github.com:you/netbox-attic.git        (origin/main)
+git@github.com:you/myproject-attic.git      (origin/main)
+git@github.com:you/otherproject-attic.git   (origin/main)
 ```
 
 Pro: each overlay is independent. Con: clutter — N overlays = N private repos.
@@ -45,8 +45,8 @@ One private remote shared across **all** your overlays. Each host repo's overlay
 ```
 git@github.com:you/attic-overlays.git
   branches:
-    repo/a49bee3fa207   ← wifimgr's overlay
-    repo/7c4696d0cdcf   ← netbox's overlay
+    repo/a49bee3fa207   ← myproject's overlay
+    repo/7c4696d0cdcf   ← otherproject's overlay
 ```
 
 Pro: one repo to bootstrap, one URL to remember. Branch names are SHAs so no project names leak. Con: GitHub's branch-switcher UI is awkward when browsing.
@@ -68,10 +68,10 @@ Format:
 
 ```toml
 [hosts.a49bee3fa207]
-label = "wifimgr"
+label = "myproject"
 
 [hosts.7c4696d0cdcf]
-label = "netbox"
+label = "otherproject"
 ```
 
 The `_attic/` prefix segregates these files from the `repo/<fp>` overlay branches and from anything you might create by hand.
@@ -109,8 +109,8 @@ When you `attic add <path>`, the path enters a marker-delimited block in the **h
 
 ```
 # BEGIN attic — managed by `attic`, do not edit between markers
-CLAUDE.md
-docs-internal/
+.envrc
+notes/
 # END attic
 ```
 
@@ -130,7 +130,7 @@ So adoption also evicts. `attic add` runs `git rm --cached --ignore-unmatch` aga
 
 The overlay's work tree is the *whole* host repo, so with no exclusions every host file reads as untracked to it: `attic status` buries the one real change under the host's entire tree, and `attic commit` dies with git's "nothing added to commit but untracked files present". attic writes `/*` into a marker block in the overlay's `info/exclude` to suppress that. The `git add --force` in `attic add` outranks it, so adopting a path still works. `openOverlay` heals overlays created before this existed, rather than only `init` — it's the one code path every overlay command passes through.
 
-That cuts the other way for the paths the overlay owns. The host `.gitignore` outranks `info/exclude`, so git will never volunteer a *new* file under `docs-internal/` — not in `git status`, not with `-uall`. `attic status` therefore asks for them by name (`ls-files --others --ignored --exclude-standard` scoped to overlay-owned paths) and prints them in a separate section, suppressed under `--porcelain`/`-s`/`-z` so a parsing caller sees only git's own stream.
+That cuts the other way for the paths the overlay owns. The host `.gitignore` outranks `info/exclude`, so git will never volunteer a *new* file under `notes/` — not in `git status`, not with `-uall`. `attic status` therefore asks for them by name (`ls-files --others --ignored --exclude-standard` scoped to overlay-owned paths) and prints them in a separate section, suppressed under `--porcelain`/`-s`/`-z` so a parsing caller sees only git's own stream.
 
 ## Host repo identity (root commit SHA)
 
