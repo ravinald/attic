@@ -33,15 +33,16 @@ var addCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		blk.Add(rels...)
-
 		mode, err := resolveOnDuplicate(addFlags.onDuplicate)
 		if err != nil {
 			return err
 		}
+		scope := duplicateScope(mode, blk, rels)
+		blk.Add(rels...)
+
 		var dups []ignore.Duplicate
-		if mode != store.OnDuplicateOff {
-			if dups, err = ignore.FindDuplicates(gitignorePath(hr), rels); err != nil {
+		if len(scope) > 0 {
+			if dups, err = ignore.FindDuplicates(gitignorePath(hr), scope); err != nil {
 				return err
 			}
 			if mode == store.OnDuplicateManage {
@@ -68,6 +69,31 @@ var addCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+// duplicateScope returns the paths to scan for redundant rules outside the block. It must be called
+// before Block.Add, which erases the distinction it depends on.
+//
+// Warn mode sees only the paths this run adopts. Its diagnostic announces a state change — the block
+// has just begun shadowing an outside rule — and re-adding a settled path changes nothing, so an
+// unscoped warn nags on every `attic add` of an established directory. Manage mode still scans
+// everything: deleting the outside rule is self-limiting (a later run finds nothing to remove), and
+// that keeps a switch to manage able to absorb a rule an earlier off/warn run left in place.
+func duplicateScope(mode string, blk ignore.Block, rels []string) []string {
+	switch mode {
+	case store.OnDuplicateOff:
+		return nil
+	case store.OnDuplicateWarn:
+		var fresh []string
+		for _, r := range rels {
+			if !blk.Has(r) {
+				fresh = append(fresh, r)
+			}
+		}
+		return fresh
+	default:
+		return rels
+	}
 }
 
 // reportDuplicates prints one diagnostic per redundant outside rule. Manage mode has already dropped
