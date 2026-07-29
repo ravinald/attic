@@ -105,10 +105,10 @@ attic clone git@github.com:you/myproject-attic.git
 | `attic clone [remote] [--mono] [--force]` | Restore an existing overlay on a new machine. With `--mono`, the remote defaults to this machine's sole mono remote. Refuses to clobber existing files without `--force`. |
 | `attic add <path>... [--on-duplicate off\|warn\|manage]` | Stage paths and append to host `.gitignore` block. `--on-duplicate` overrides the policy for redundant outside rules (see below). |
 | `attic rm <path>... [--delete]` | Stop tracking; `--delete` also removes the file. |
-| `attic config get\|set\|list [--global] <key> [value]` | Read/write settings. `set` targets the current repo, or `--global` (`~/.config/attic/config.toml`). |
+| `attic config get\|set\|list [--global] <key> [value]` | Read/write settings (`gitignore.on_duplicate`, `status.ignore`). `set` targets the current repo, or `--global` (`~/.config/attic/config.toml`). |
 | `attic eject [--check]` | Evict managed paths from the **host** index (never from disk or the overlay); `--check` reports without changing. |
 | `attic commit [-m <msg>] [-a] [--allow-empty]` | Commit staged overlay changes. Without `-m`, uses a timestamped snapshot message; `-a` also stages edits to tracked files. |
-| `attic status` | `git status` for the overlay, plus overlay files the host `.gitignore` hides from git. |
+| `attic status` | `git status` for the overlay, plus overlay files the host `.gitignore` hides from git (minus any `status.ignore` patterns). |
 | `attic push` `pull` `fetch` `log` `diff` | Pass-through to git. |
 | `attic sync [--strategy=rebase\|merge]` | Fetch + integrate + push. Refuses on a dirty index or edits to overlay-tracked files; untracked host files are ignored. |
 | `attic ls` | List paths tracked in the overlay. |
@@ -223,6 +223,26 @@ The block alone isn't enough: `.gitignore` only suppresses *untracked* paths, so
 The overlay's work tree is the *whole* host repo, so by default every host file reads as untracked to it. attic writes `/*` into a marker block in the overlay's `info/exclude` to suppress that; the `git add --force` behind `attic add` outranks it, so adopting a path still works. Overlays created before this existed are healed on the next command.
 
 That cuts the other way for the paths the overlay owns: the host `.gitignore` outranks `info/exclude`, so git will never volunteer a *new* file under `notes/` — not in `git status`, not with `-uall`. `attic status` asks for those by name and lists them separately, which is the only reason a file you just wrote doesn't sit there unnoticed until you wonder why it never pushed.
+
+### Quieting that list: `status.ignore`
+
+Asking by name is unconditional — attic queries `git ls-files --others --ignored`, and every file under overlay scope is ignored by construction. So no `.gitignore` or `info/exclude` rule can trim the list; adding one only makes a file *more* certainly ignored, hence *more* certainly reported. Finder droppings pile up there and a genuinely new file gets skimmed past.
+
+`status.ignore` filters after the query:
+
+```sh
+attic config set --global status.ignore '.DS_Store,Thumbs.db'
+```
+
+| Pattern form | Matches |
+|---|---|
+| `.DS_Store`, `*.tmp` | the **basename**, at any depth |
+| `scratch/` | everything under a directory of that name, at any depth |
+| `notes/*.tmp` | the whole host-relative path |
+
+`**/.DS_Store` is accepted as a synonym for the basename form. attic ships **no** default patterns — a filter that hides a file the overlay should have adopted is worse than three lines of `.DS_Store`, so you opt in.
+
+Layers **union** rather than override: `ATTIC_STATUS_IGNORE` env + per-repo (`attic config set status.ignore …`) + global. A per-repo pattern adds to the global list instead of replacing it, which is what setting one asks for. `attic config list` shows each layer and the effective set. A malformed pattern warns on stderr and hides nothing.
 
 ## Why not vcsh / repoverlay / chezmoi?
 

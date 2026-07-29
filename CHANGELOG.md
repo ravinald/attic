@@ -2,6 +2,12 @@
 
 All notable changes to `attic`.
 
+## [Unreleased]
+
+### Added
+
+- `status.ignore` — glob patterns hidden from the untracked-overlay-files list in `attic status` and `attic commit`. Every file under overlay scope is ignored by construction, so no `.gitignore` rule can trim that list; this filters after the `ls-files` query. Basename patterns (`.DS_Store`), directory patterns (`scratch/`), or full host-relative paths (`notes/*.tmp`); `**/` is accepted as a synonym for the basename form. No defaults ship — a filter that hides a file the overlay should have adopted is worse than the noise it removes. Layers union rather than override (`ATTIC_STATUS_IGNORE` env + per-repo + global), so a per-repo pattern never silences the global list. A malformed pattern warns on stderr and hides nothing.
+
 ## [v0.2.0] — 2026-07-28
 
 ### Added

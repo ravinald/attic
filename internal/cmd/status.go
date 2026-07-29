@@ -26,7 +26,7 @@ var statusCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		untracked, err := untrackedOverlayFiles(repo, scope)
+		untracked, err := reportableUntracked(repo, scope)
 		if err != nil {
 			return err
 		}

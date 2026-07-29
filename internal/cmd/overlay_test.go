@@ -106,6 +106,41 @@ func TestOverlayHidesHostFiles(t *testing.T) {
 	}
 }
 
+// TestReportableUntrackedAppliesStatusIgnore covers the seam status.ignore exists for: every file
+// under overlay scope is ignored by construction, so git's own exclude machinery can never filter
+// this list — only attic can, after the ls-files call.
+func TestReportableUntrackedAppliesStatusIgnore(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv(statusIgnoreEnv, ".DS_Store, scratch/")
+
+	hr, repo := newOverlayFixture(t)
+	writeFile(t, hr.Root, "docs-internal/.DS_Store", "finder")
+	writeFile(t, hr.Root, "docs-internal/images/.DS_Store", "finder")
+	writeFile(t, hr.Root, "docs-internal/scratch/draft.md", "draft")
+	writeFile(t, hr.Root, "docs-internal/verdict.md", "real work")
+
+	scope, err := overlayScope(hr, repo)
+	if err != nil {
+		t.Fatalf("overlayScope: %v", err)
+	}
+
+	all, err := untrackedOverlayFiles(repo, scope)
+	if err != nil {
+		t.Fatalf("untrackedOverlayFiles: %v", err)
+	}
+	if len(all) != 4 {
+		t.Fatalf("unfiltered = %q, want all 4 files — the fixture is wrong, not the filter", all)
+	}
+
+	got, err := reportableUntracked(repo, scope)
+	if err != nil {
+		t.Fatalf("reportableUntracked: %v", err)
+	}
+	if want := []string{"docs-internal/verdict.md"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("reportableUntracked = %q, want %q", got, want)
+	}
+}
+
 // newOverlayFixture builds a host repo with an attic-managed .gitignore block plus a bare overlay
 // tracking docs-internal, matching what `attic init` + `attic add docs-internal` produce.
 func newOverlayFixture(t *testing.T) (host.Repo, gitwrap.Repo) {
