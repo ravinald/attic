@@ -28,8 +28,8 @@ type Meta struct {
 	Mono        bool      `toml:"mono,omitempty"`   // true if remote is a shared mono repo
 	CreatedAt   time.Time `toml:"created_at"`
 
-	GitignoreOnDuplicate string `toml:"gitignore_on_duplicate,omitempty"` // per-repo override of the global on_duplicate policy
-
+	GitignoreOnDuplicate string   `toml:"gitignore_on_duplicate,omitempty"` // per-repo override of the global on_duplicate policy
+	StatusIgnore         []string `toml:"status_ignore,omitempty"`          // per-repo patterns, unioned with the global status.ignore
 }
 
 // DisplayLabel returns the user-set Label, or HostName as a fallback.

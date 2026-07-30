@@ -31,11 +31,17 @@ func ValidOnDuplicate(m string) bool {
 // Config is attic's machine-wide configuration, stored at ~/.config/attic/config.toml.
 type Config struct {
 	Gitignore GitignoreConfig `toml:"gitignore"`
+	Status    StatusConfig    `toml:"status"`
 }
 
 // GitignoreConfig holds host .gitignore management policy.
 type GitignoreConfig struct {
 	OnDuplicate string `toml:"on_duplicate,omitempty"`
+}
+
+// StatusConfig holds reporting policy for `attic status` and `attic commit`.
+type StatusConfig struct {
+	Ignore []string `toml:"ignore,omitempty"`
 }
 
 // ConfigPath returns the global config file path.

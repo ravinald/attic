@@ -66,7 +66,7 @@ func preflight(hr host.Repo, repo gitwrap.Repo, paths []string) error {
 	if err != nil {
 		return err
 	}
-	untracked, err := untrackedOverlayFiles(repo, scope)
+	untracked, err := reportableUntracked(repo, scope)
 	if err != nil {
 		return err
 	}

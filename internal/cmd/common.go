@@ -125,6 +125,22 @@ func untrackedOverlayFiles(repo gitwrap.Repo, scope []string) ([]string, error) 
 	return files, nil
 }
 
+// reportableUntracked is untrackedOverlayFiles with the effective status.ignore patterns applied.
+// Both callers that surface the list to a human go through here; untrackedOverlayFiles stays a
+// straight git query so the filter can be tested without one.
+func reportableUntracked(repo gitwrap.Repo, scope []string) ([]string, error) {
+	files, err := untrackedOverlayFiles(repo, scope)
+	if err != nil {
+		return nil, err
+	}
+	kept, malformed := store.FilterStatusIgnored(files, resolveStatusIgnore())
+	for _, p := range malformed {
+		fmt.Fprintf(os.Stderr, "attic: skipping malformed status.ignore pattern %q — "+
+			"fix it with `attic config set status.ignore ...`\n", p)
+	}
+	return kept, nil
+}
+
 // splitLines splits git's newline-delimited output, dropping the trailing empty element.
 func splitLines(out string) []string {
 	var lines []string
@@ -221,6 +237,34 @@ func resolveOnDuplicate(flag string) (string, error) {
 		return "", err
 	}
 	return store.ResolveOnDuplicate(flag, envOnDuplicate(), onDuplicatePerRepo(), global)
+}
+
+// statusIgnoreEnv adds status.ignore patterns for a single invocation, comma-separated.
+const statusIgnoreEnv = "ATTIC_STATUS_IGNORE"
+
+// statusIgnorePerRepo returns the current host repo's status.ignore patterns, or nil when there is
+// no overlay. As with on_duplicate, a resolution failure collapses to nil so a missing overlay
+// cannot block reading the policy.
+func statusIgnorePerRepo() []string {
+	hr, err := resolveHost()
+	if err != nil {
+		return nil
+	}
+	m, err := store.LoadMeta(hr.Fingerprint())
+	if err != nil {
+		return nil
+	}
+	return m.StatusIgnore
+}
+
+// resolveStatusIgnore returns the union of env, per-repo, and global patterns. A config that will
+// not load yields no patterns: reporting an extra file is recoverable, hiding one is not.
+func resolveStatusIgnore() []string {
+	global, err := store.LoadConfig()
+	if err != nil {
+		return nil
+	}
+	return store.ResolveStatusIgnore(store.SplitStatusIgnore(os.Getenv(statusIgnoreEnv)), statusIgnorePerRepo(), global)
 }
 
 // relativiseToHost converts a list of user-supplied paths into clean, slash-separated
