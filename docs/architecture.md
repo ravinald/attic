@@ -53,6 +53,20 @@ Pro: one repo to bootstrap, one URL to remember. Branch names are SHAs so no pro
 
 In mono mode, `init` configures `push.default = current` and `push.autoSetupRemote = true` so plain `attic push` always routes to the matching branch and creates it on first push.
 
+#### Fetch scope
+
+Each `repo/<fp>` branch is an independent orphan history, so an overlay has no reason to hold any branch but its own. `init` and `clone` therefore pin the fetch refspec to a single branch:
+
+```
+remote.origin.fetch = +refs/heads/repo/<fp>:refs/remotes/origin/repo/<fp>
+```
+
+Git's default (`+refs/heads/*:refs/remotes/origin/*`, what `remote add` writes) makes a bare `attic fetch` or `attic pull` download the entire store into that one overlay's bare — every unrelated project's history, once per overlay on the machine. On a store of 18 overlays that turned a 31 KiB restore into a 45 MiB one.
+
+`attic sync` re-pins the refspec when it finds a mono overlay wired with the wildcard, so overlays created before this healed on their next sync. Per-host overlays keep the wildcard: their bare *is* the whole overlay, so scoping it would be wrong.
+
+Nothing else in the mono path needs the wide refspec. `attic sync` fetches an explicit branch (`fetch origin <branch>`), and the label commands work through a throwaway clone of `_attic/labels`, never the overlay bare.
+
 ### Labels on the mono remote
 
 `attic` reserves a single orphan branch on the mono remote, `_attic/labels`, carrying the map and a

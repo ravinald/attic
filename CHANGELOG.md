@@ -4,6 +4,10 @@ All notable changes to `attic`.
 
 ## [Unreleased]
 
+### Fixed
+
+- Mono overlays fetched the whole store. `attic clone --mono` single-branch-cloned correctly, then immediately widened `remote.origin.fetch` to `+refs/heads/*:…` and fetched again, pulling every other project's overlay history into this one's bare; `attic init --mono-remote` inherited the same wildcard from `git remote add`. A 31 KiB restore against an 18-overlay store cost 45 MiB, repeated per overlay on the machine. Both paths now pin the refspec to `repo/<fp>` alone, and `attic sync` re-pins an overlay still wired wide. Per-host overlays are unaffected — the wildcard is correct there.
+
 ### Added
 
 - `status.ignore` — glob patterns hidden from the untracked-overlay-files list in `attic status` and `attic commit`. Every file under overlay scope is ignored by construction, so no `.gitignore` rule can trim that list; this filters after the `ls-files` query. Basename patterns (`.DS_Store`), directory patterns (`scratch/`), or full host-relative paths (`notes/*.tmp`); `**/` is accepted as a synonym for the basename form. No defaults ship — a filter that hides a file the overlay should have adopted is worse than the noise it removes. Layers union rather than override (`ATTIC_STATUS_IGNORE` env + per-repo + global), so a per-repo pattern never silences the global list. A malformed pattern warns on stderr and hides nothing.

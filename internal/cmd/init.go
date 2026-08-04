@@ -90,6 +90,11 @@ Two remote shapes:
 			if err := repo.Stream("config", "push.autoSetupRemote", "true"); err != nil {
 				return err
 			}
+			if remote != "" {
+				if err := repo.Stream("config", "remote.origin.fetch", monoFetchRefspec(branch)); err != nil {
+					return err
+				}
+			}
 		}
 
 		m := store.Meta{
