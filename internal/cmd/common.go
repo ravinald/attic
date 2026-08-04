@@ -21,6 +21,27 @@ const overlayBranchPrefix = "repo/"
 // overlayBranch is the mono-remote branch name for an overlay fingerprint.
 func overlayBranch(fp string) string { return overlayBranchPrefix + fp }
 
+// monoFetchRefspec scopes an overlay's fetch to its own branch. A mono remote holds one orphan
+// branch per fingerprint, so git's default `+refs/heads/*:refs/remotes/origin/*` would drag every
+// other project's history into this overlay's bare — a bare `attic fetch` or `attic pull` downloads
+// the whole store, and the cost repeats per overlay on the machine.
+func monoFetchRefspec(branch string) string {
+	return fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", branch, branch)
+}
+
+// ensureMonoFetch narrows the fetch refspec of a mono overlay, healing one wired before the refspec
+// was scoped. Non-mono overlays own their whole bare, so the wildcard is right there and left alone.
+func ensureMonoFetch(repo gitwrap.Repo, branch string) error {
+	if !strings.HasPrefix(branch, overlayBranchPrefix) {
+		return nil
+	}
+	want := monoFetchRefspec(branch)
+	if got, err := repo.Run("config", "--get", "remote.origin.fetch"); err == nil && strings.TrimSpace(got) == want {
+		return nil
+	}
+	return repo.Stream("config", "remote.origin.fetch", want)
+}
+
 // resolveHost finds the host repo for the current working directory.
 func resolveHost() (host.Repo, error) {
 	cwd, err := os.Getwd()

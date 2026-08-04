@@ -57,6 +57,9 @@ Refuses to run with a dirty index or modifications to overlay-tracked files. Unt
 		if branch == "" {
 			return errors.New("sync: overlay HEAD is detached — checkout a branch first")
 		}
+		if err := ensureMonoFetch(repo, branch); err != nil {
+			return err
+		}
 
 		beforeLocal := mustRevParse(repo, "HEAD")
 		beforeRemote := tryRevParse(repo, "refs/remotes/origin/"+branch)

@@ -90,9 +90,9 @@ Refuses to clobber existing files unless --force.`,
 				return err
 			}
 			// `git clone --bare` sets no fetch refspec and no remote-tracking refs, so the overlay would
-			// report no-upstream and couldn't compute sync state or pull. Restore the standard refspec
-			// `git init` + `remote add` would have given it, then fetch and set the branch's upstream.
-			if err := repo.Stream("config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"); err != nil {
+			// report no-upstream and couldn't compute sync state or pull. Give it a refspec covering
+			// its own branch alone, then fetch and set the branch's upstream.
+			if err := repo.Stream("config", "remote.origin.fetch", monoFetchRefspec(branch)); err != nil {
 				return err
 			}
 			if err := repo.Stream("fetch", "origin"); err != nil {
