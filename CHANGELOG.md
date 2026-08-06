@@ -17,6 +17,8 @@ All notable changes to `attic`.
 
 ### Fixed
 
+- `attic add`/`rm`/`stage` rejected a path that doesn't exist yet as "outside host repo". The host root is canonicalised at detection, but `EvalSymlinks` can only resolve a path that exists, so a not-yet-created path kept its uncanonical form; on macOS the root reads `/private/var/…` while the cwd reads `/var/…`, and `filepath.Rel` between the two forms returns `../…`, tripping the outside-repo guard on a path plainly inside the repo. The nearest existing ancestor is now resolved instead of the whole path. Needed both a missing path and a symlinked prefix to trigger, which is why a repo under `~/git` never showed it and a `mktemp -d` sandbox showed it immediately.
+
 - Mono overlays fetched the whole store. `attic clone --mono` single-branch-cloned correctly, then immediately widened `remote.origin.fetch` to `+refs/heads/*:…` and fetched again, pulling every other project's overlay history into this one's bare; `attic init --mono-remote` inherited the same wildcard from `git remote add`. A 31 KiB restore against an 18-overlay store cost 45 MiB, repeated per overlay on the machine. Both paths now pin the refspec to `repo/<fp>` alone, and `attic sync` re-pins an overlay still wired wide. Per-host overlays are unaffected — the wildcard is correct there.
 
 ### Added

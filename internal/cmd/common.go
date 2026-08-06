@@ -290,6 +290,28 @@ func resolveStatusIgnore() []string {
 
 // relativiseToHost converts a list of user-supplied paths into clean, slash-separated
 // paths relative to the host repo root. It refuses paths outside the host root.
+// resolveNearestExisting canonicalises as much of path as exists on disk and re-appends the rest.
+//
+// The host root is canonicalised at detection, so a comparison against it only holds if both sides
+// are canonical. EvalSymlinks needs the whole path to exist, and registering a path before creating
+// it is legitimate, so resolving the nearest existing ancestor is what keeps the two comparable: on
+// macOS the root reads /private/var/... while the cwd a user types from reads /var/..., and mixing
+// the forms makes filepath.Rel return "../..." for a path plainly inside the repo.
+func resolveNearestExisting(path string) string {
+	rest := ""
+	for cur := path; ; {
+		if resolved, err := filepath.EvalSymlinks(cur); err == nil {
+			return filepath.Join(resolved, rest)
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return path // nothing along the path resolves; leave it for the caller's guard to judge
+		}
+		rest = filepath.Join(filepath.Base(cur), rest)
+		cur = parent
+	}
+}
+
 func relativiseToHost(hostRoot string, args []string) ([]string, error) {
 	rels := make([]string, 0, len(args))
 	for _, a := range args {
@@ -297,10 +319,7 @@ func relativiseToHost(hostRoot string, args []string) ([]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("path %s: %w", a, err)
 		}
-		// Resolve symlinks when the path exists; otherwise fall back to the cleaned absolute path.
-		if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-			abs = resolved
-		}
+		abs = resolveNearestExisting(abs)
 		rel, err := filepath.Rel(hostRoot, abs)
 		if err != nil {
 			return nil, fmt.Errorf("path %s: %w", a, err)
