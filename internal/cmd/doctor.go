@@ -132,6 +132,12 @@ func classify(m store.Meta, overrides map[string]string) *finding {
 		return &finding{fp: fp, label: m.DisplayLabel(), kind: "host-missing", anomaly: true,
 			detail: "host repo not found at " + m.HostRoot}
 	}
+	// Reported, never auto-fixed: re-keying moves a storage directory, and doctor sweeps every overlay
+	// on the machine. A bulk mutation of that shape wants the operator in the host repo deciding.
+	if live, ok := liveFingerprint(m.HostRoot); ok && live != fp {
+		return &finding{fp: fp, label: m.DisplayLabel(), kind: "fingerprint", anomaly: true,
+			detail: fmt.Sprintf("host root commit now fingerprints %s (history rewritten) — run `attic rekey` in %s", live, m.HostRoot)}
+	}
 
 	effOrigin := m.OriginURL
 	var newOrigin string
@@ -209,6 +215,17 @@ func applyFindings(findings []finding) (applied int, skipped []finding, remotes 
 	}
 	sort.Strings(remotes)
 	return applied, skipped, remotes
+}
+
+// liveFingerprint returns the fingerprint the host repo hashes to today. Not-ok covers a repo that
+// can't be read at all, which the host-missing check already reports; only a readable repo that
+// disagrees with its stored key is a re-key candidate.
+func liveFingerprint(hostRoot string) (string, bool) {
+	r, err := host.Detect(hostRoot)
+	if err != nil {
+		return "", false
+	}
+	return r.Fingerprint(), true
 }
 
 // liveOrigin reads the host repo's current origin URL, quietly — a missing origin is information,

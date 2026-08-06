@@ -86,3 +86,31 @@ func TestEnumerateMetasMissingDir(t *testing.T) {
 		t.Fatalf("expected 0 metas, got %d", len(metas))
 	}
 }
+
+// TestFindMetasByHostRoot covers the reverse lookup that makes an orphaned overlay findable: storage
+// is keyed by the host's root commit, so after a history rewrite the fingerprint is the one thing a
+// caller cannot use to find it. host_root is.
+func TestFindMetasByHostRoot(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+
+	for _, m := range []Meta{
+		{Fingerprint: "aaaaaaaaaaaa", HostRoot: "/x/alpha", HostName: "alpha"},
+		{Fingerprint: "bbbbbbbbbbbb", HostRoot: "/x/beta", HostName: "beta"},
+		{Fingerprint: "cccccccccccc", HostRoot: "/x/alpha", HostName: "alpha-again"},
+	} {
+		if err := SaveMeta(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := FindMetasByHostRoot("/x/alpha")
+	if err != nil {
+		t.Fatalf("FindMetasByHostRoot: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("matched %d overlays, want 2 — ambiguity has to be visible, not collapsed", len(got))
+	}
+	if none, err := FindMetasByHostRoot("/x/missing"); err != nil || len(none) != 0 {
+		t.Errorf("unknown root: got %d overlays, err %v", len(none), err)
+	}
+}
