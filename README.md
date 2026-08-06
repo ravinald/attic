@@ -103,7 +103,8 @@ attic clone git@github.com:you/myproject-attic.git
 | `attic init [--remote URL \| --mono-remote URL \| --gh-private]` | Create overlay for the current host repo. |
 | `attic deinit [--force]` | Remove the local overlay + `.gitignore` block (work-tree files stay). Refuses to drop unpushed commits without `--force`. |
 | `attic clone [remote] [--mono] [--force]` | Restore an existing overlay on a new machine. With `--mono`, the remote defaults to this machine's sole mono remote. Refuses to clobber existing files without `--force`. |
-| `attic add <path>... [--on-duplicate off\|warn\|manage]` | Stage paths and append to host `.gitignore` block. `--on-duplicate` overrides the policy for redundant outside rules (see below). |
+| `attic add <path>... [--on-duplicate off\|warn\|manage]` | **Register** paths: append to host `.gitignore` block and stage. Warns when a path is already registered or already covered by a broader entry, and leaves the block unchanged in that case. `--on-duplicate` overrides the policy for redundant outside rules (see below). |
+| `attic stage [<path>...]` | **Re-stage** new and modified files under already-registered paths, without touching the `.gitignore` block. No arguments stages every managed entry. Refuses paths the block doesn't cover. |
 | `attic rm <path>... [--delete]` | Stop tracking; `--delete` also removes the file. |
 | `attic config get\|set\|list [--global] <key> [value]` | Read/write settings (`gitignore.on_duplicate`, `status.ignore`). `set` targets the current repo, or `--global` (`~/.config/attic/config.toml`). |
 | `attic eject [--check]` | Evict managed paths from the **host** index (never from disk or the overlay); `--check` reports without changing. |
@@ -119,7 +120,8 @@ attic clone git@github.com:you/myproject-attic.git
 | `attic label reset [--force]` | Clear ALL local overrides on this machine (force-reset to shared/auto names); lists them without `--force`. |
 | `attic labels edit [--remote URL]` | Edit the whole shared map in `$EDITOR`; validates, regenerates the README, publishes on save. |
 | `attic labels push` / `attic labels pull` `[--remote URL]` | Contribute new overlays to the map (never overwrites) / cache the map's names locally. `--remote` disambiguates when the machine has several mono remotes. |
-| `attic doctor [--fix] [--force] [--push]` | Audit every overlay's label against its origin remote; report drift, `--fix` corrects it, `--push` publishes the corrected map. |
+| `attic doctor [--fix] [--force] [--push]` | Audit every overlay's label against its origin remote; report drift, `--fix` corrects it, `--push` publishes the corrected map. Also reports overlays orphaned by a host history rewrite. |
+| `attic rekey [--dry-run]` | Re-point an overlay orphaned by a host history rewrite onto the repo's current fingerprint. Moves storage, renames the `repo/<fp>` branch, rewires config and meta; never rewrites overlay history. |
 | `attic exec -- <git-args>` | Run any git command against the overlay. |
 | `attic version` | Version, commit, build date. |
 

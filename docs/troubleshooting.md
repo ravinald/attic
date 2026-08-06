@@ -22,6 +22,17 @@ The host repo on this machine has a fingerprint that doesn't exist on the mono r
 
 Two machines pushed to the same `repo/<fp>` branch without one pulling first. Standard git: `attic pull`, resolve any conflicts, `attic push` again.
 
+## `attic add` warned that a path is already registered
+
+Two different intents share one verb's shape, so `add` distinguishes them rather than guessing:
+
+- **`attic add <path>`** registers a path: it writes the path into the host `.gitignore` block and stages it. This is a one-time act per path.
+- **`attic stage [<path>...]`** re-stages what the block already registers, and never touches the block. This is how new files under a managed directory reach the overlay index.
+
+`attic add docs-internal` on an already-registered directory still stages it, so nothing breaks; the warning points at `attic stage` because that is the verb that says what you meant. `attic add docs-internal/new-file.md` warns and leaves the block **unchanged**: the `docs-internal` entry already covers the file, so a new line would ignore nothing further while making the block misreport the granularity the overlay is managed at.
+
+Registering a file beneath an already-registered directory is the one case worth checking yourself. If the block genuinely should track that file rather than its parent directory, the parent entry is the thing to remove (`attic rm`), not the file to add.
+
 ## An overlay path keeps showing up staged in the host repo
 
 A `.gitignore` rule can't untrack a path already in the host index or stop a `git add -f`, so once an overlay path lands in the host index (a stray force-add, a headless script, a pre-`attic` commit) it sticks and every commit trips the guard. Run `attic eject` from the host repo — it evicts every managed path from the host index while leaving the working-tree files and overlay history untouched. `attic eject --check` reports without changing anything; wire it into a pre-commit hook to catch the regression early.
@@ -32,13 +43,28 @@ Remove it from the host upstream (`git rm --cached path && git commit && git pus
 
 ## `attic status` says clean, but I know I added a file
 
-The host `.gitignore` hides overlay-owned paths from git and outranks the overlay's own `info/exclude`, so git will never volunteer a *new* file under `notes/` — not in `git status`, not with `-uall`. `attic status` asks for those by name and prints them under **"Untracked overlay files"** below git's own output. If that section lists your file, it exists but was never staged: `attic add <path>`.
+The host `.gitignore` hides overlay-owned paths from git and outranks the overlay's own `info/exclude`, so git will never volunteer a *new* file under `notes/` — not in `git status`, not with `-uall`. `attic status` asks for those by name and prints them under **"Untracked overlay files"** below git's own output. If that section lists your file, it exists but was never staged: `attic stage`. Use `attic stage`, not `attic add` — the file sits under a directory the block already registers, and `add` would append a redundant rule naming it.
 
 If you piped the command (`--porcelain`, `-s`, `-z`), that section is suppressed by design — it's prose, and it must not land in a stream a script parses. Run it bare to see it.
 
 ## `attic commit` says "nothing staged for commit"
 
-Edits to already-tracked overlay files aren't staged automatically. Use `attic commit -a`. New files need `attic add` first — the error lists any it can see.
+Edits to already-tracked overlay files aren't staged automatically. Use `attic commit -a`. New files need staging first — `attic stage` for anything under a path the overlay already manages, `attic add <path>` only to register a path the block doesn't cover yet. The error lists any it can see.
+
+## Every attic command says "no overlay for &lt;path&gt;" but the overlay existed yesterday
+
+You rewrote the host repo's history. attic keys overlay storage by the host's root commit, so `git filter-repo`, `filter-branch`, a squashed or grafted root, or an amended root commit all move the key and orphan the overlay. The history is not lost: it is filed under the old fingerprint, on disk and on the remote.
+
+Run **`attic rekey`** inside the host repo. It names both fingerprints, moves the storage dir, renames the `repo/<fp>` branch, rewrites the branch config and fetch refspec, and updates `meta.toml`. `--dry-run` prints the plan first. Then `attic push` to publish the new branch; the old one stays on the mono remote as a fallback.
+
+Do **not** run `attic init` here. It would start an empty overlay beside the full one and leave the real history unreachable. The error says so, and refuses to offer init when it can see orphaned storage.
+
+`attic doctor` reports orphans across every overlay on the machine, which is how you find one in a repo you haven't opened lately.
+
+Two things to know before rewriting a host repo's history, because both bite after the fact rather than during:
+
+- A `git reset --hard` onto the rewritten history **deletes every overlay file the host index also tracked**, since those paths are in the old index and absent from the new HEAD. Untracked overlay files survive. Recover with `attic rekey`, then `git --git-dir=$(attic where --fp | xargs -I{} echo ~/.local/share/attic/repos/{}/attic.git) --work-tree=. checkout -- <path>`.
+- If a snapshot hook runs while the overlay is orphaned it fails silently and records nothing, so a change made in that window is only on disk. Commit it after re-keying.
 
 ## `attic labels push` didn't rename my overlay
 

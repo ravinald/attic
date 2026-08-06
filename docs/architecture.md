@@ -159,7 +159,11 @@ Why the root commit and not `origin` URL? Because URLs change (ssh ↔ https, mi
 Edge cases:
 - **Multi-root repos** (uncommon — typically arise from `git merge --allow-unrelated-histories`): take the smallest SHA. Stable.
 - **Empty repo** (no commits): `attic init` errors out. Make at least one commit first.
-- **Repo with rewritten root** (`git rebase` rewrote the original root commit): fingerprint changes; previous overlay is orphaned. Workaround: `mv ~/.local/share/attic/repos/<old>/ ~/.local/share/attic/repos/<new>/` and update `meta.toml`. Rare.
+- **Repo with rewritten root**: the fingerprint changes and the previous overlay is orphaned — every attic command reports `no overlay for <path>` while the history sits intact on disk and on the remote. Fix it with **`attic rekey`** (run inside the host repo), which moves the storage dir, renames the `repo/<fp>` branch, rewrites the branch config and fetch refspec, and updates `meta.toml`. `attic doctor` finds orphans across every overlay on the machine; it reports them and never re-keys as part of `--fix`, because moving storage wants the operator present.
+
+  Anything that rewrites the root commit does this, not just `git rebase`: `git filter-repo` and `filter-branch` (purging a path that exists in the root commit rewrites it and every descendant), a squashed root, and grafted or amended history. Purging a directory from a repo's history is the common trigger, and it is worth knowing before the rewrite rather than after, because a `git reset --hard` onto the rewritten history deletes every overlay file the host index also tracked.
+
+  Re-keying never rewrites overlay history; it only re-labels where that history is filed. The old `repo/<fp>` branch is left on the mono remote as a fallback — publish the new one with `attic push`.
 
 ## Why not …
 
