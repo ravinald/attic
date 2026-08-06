@@ -73,8 +73,10 @@ func preflight(hr host.Repo, repo gitwrap.Repo, paths []string) error {
 	for _, f := range untracked {
 		b.WriteString("\n  untracked: " + f)
 	}
+	// Everything reportable here sits under a path the block already registers, so staging is the verb.
+	// `attic add` would append a redundant block line naming a file the managed directory already covers.
 	if len(untracked) > 0 {
-		b.WriteString("\nstage them with `attic add <path>...`")
+		b.WriteString("\nstage them with `attic stage`")
 	}
 	b.WriteString("\ncommit edits to tracked files with `attic commit -a`")
 	return errors.New(b.String())

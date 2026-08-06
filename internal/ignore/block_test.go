@@ -129,3 +129,37 @@ func TestAddDeduplicates(t *testing.T) {
 		t.Fatalf("expected 2 unique lines, got %d: %v", len(b.Lines), b.Lines)
 	}
 }
+
+func TestCovers(t *testing.T) {
+	b := Block{Lines: []string{"docs-internal", ".drover.toml", "logs/*.json", "build/output"}}
+
+	cases := []struct {
+		name string
+		path string
+		want string // "" = not covered
+	}{
+		{"child of a directory entry", "docs-internal/CHANGELOG.md", "docs-internal"},
+		{"deep child", "docs-internal/baselines/a.json", "docs-internal"},
+		{"nested entry child", "build/output/bin", "build/output"},
+		{"exact match is Has, not Covers", "docs-internal", ""},
+		{"exact file entry", ".drover.toml", ""},
+		{"glob entries never cover", "logs/a.json", ""},
+		{"unrelated path", "internal/main.go", ""},
+		{"prefix but not a path boundary", "docs-internal-scratch/a.md", ""},
+		{"empty path", "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			by, ok := b.Covers(tc.path)
+			if tc.want == "" {
+				if ok {
+					t.Errorf("Covers(%q) = %q, want not covered", tc.path, by)
+				}
+				return
+			}
+			if !ok || by != tc.want {
+				t.Errorf("Covers(%q) = (%q, %v), want (%q, true)", tc.path, by, ok, tc.want)
+			}
+		})
+	}
+}

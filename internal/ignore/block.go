@@ -104,6 +104,30 @@ func (b *Block) Has(path string) bool {
 	return false
 }
 
+// Covers returns the block line that already ignores path by being a directory ancestor of it. An
+// exact match is Has, not Covers, and a line carrying glob metacharacters never matches — attic will
+// not second-guess a real pattern's intent, matching FindDuplicates' rule.
+//
+// This is the check Add cannot make: Add dedupes by exact string, so without it registering a file
+// beneath an already-registered directory appends a line that ignores nothing new and misreports the
+// granularity the overlay is managed at.
+func (b *Block) Covers(path string) (string, bool) {
+	p := normalizeRule(path)
+	if p == "" {
+		return "", false
+	}
+	for _, l := range b.Lines {
+		n := normalizeRule(l)
+		if n == "" || n == p || hasGlobMeta(n) {
+			continue
+		}
+		if strings.HasPrefix(p, n+"/") {
+			return l, true
+		}
+	}
+	return "", false
+}
+
 // DropOutside marks non-block lines (matched by exact trimmed text) for deletion on the next Save.
 // The manage-mode policy uses it to remove a redundant rule once its path lives in the block. Lines
 // inside the markers are never affected — those are owned by Lines.
