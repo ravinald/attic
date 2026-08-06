@@ -82,6 +82,25 @@ func EnumerateMetas() ([]Meta, error) {
 	return out, nil
 }
 
+// FindMetasByHostRoot returns every overlay whose recorded host_root is root. Fingerprints are
+// derived from the host's root commit, so a history rewrite leaves storage registered to this work
+// tree under a key the repo no longer hashes to; this is the reverse lookup that finds it. More than
+// one match means two overlays claim the same work tree, which a caller must resolve rather than
+// guess at.
+func FindMetasByHostRoot(root string) ([]Meta, error) {
+	metas, err := EnumerateMetas()
+	if err != nil {
+		return nil, err
+	}
+	var out []Meta
+	for _, m := range metas {
+		if m.HostRoot == root {
+			out = append(out, m)
+		}
+	}
+	return out, nil
+}
+
 // SaveMeta writes meta.toml atomically.
 func SaveMeta(m Meta) error {
 	p, err := MetaPath(m.Fingerprint)

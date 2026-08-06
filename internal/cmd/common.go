@@ -63,7 +63,7 @@ func openOverlay() (host.Repo, gitwrap.Repo, error) {
 	}
 	if _, err := os.Stat(bare); err != nil {
 		if os.IsNotExist(err) {
-			return hr, gitwrap.Repo{}, fmt.Errorf("no overlay for %s — run `attic init` or `attic clone <remote>`", hr.Root)
+			return hr, gitwrap.Repo{}, noOverlayError(hr)
 		}
 		return hr, gitwrap.Repo{}, fmt.Errorf("stat overlay %s: %w", bare, err)
 	}

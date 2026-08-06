@@ -4,6 +4,17 @@ All notable changes to `attic`.
 
 ## [Unreleased]
 
+### Added
+
+- `attic rekey` re-points an overlay orphaned by a host history rewrite. Overlay storage is keyed by the host repo's root commit, so `git filter-repo`, `filter-branch`, a squashed or grafted root, or an amended root commit moves the key and every command then reports `no overlay for <path>` while the history sits intact on disk and on the remote. rekey moves the storage dir, renames the `repo/<fp>` branch, rewrites the branch config and fetch refspec, and updates `meta.toml`; `--dry-run` prints the plan. Overlay history is never rewritten, only re-filed. The previous guidance was a documented manual `mv` that omitted the branch rename and the refspec, so it left mono overlays half-wired.
+- `attic stage [<path>...]` re-stages new and modified files under paths the overlay already manages, without touching the host `.gitignore` block. With no arguments it stages every managed entry, which is what a snapshot hook wants; with arguments it refuses paths the block doesn't cover.
+
+### Changed
+
+- `attic add` now distinguishes registering a path from re-staging one. Re-adding an already-registered path still stages it and points at `attic stage`; naming a path already covered by a broader entry warns and leaves the block **unchanged**, where before it appended a rule that ignored nothing further and made the block misreport the granularity the overlay is managed at. `Block.Add` dedupes by exact string, which is why a file beneath a registered directory used to slip through.
+- `attic doctor` reports overlays orphaned by a history rewrite, so one in a repo you haven't opened lately still surfaces. Reported only, never re-keyed under `--fix`: moving a storage directory wants the operator present.
+- `attic commit`'s "nothing staged" error points at `attic stage` instead of `attic add`. Everything it can report sits under an already-registered path, so add was always the redundant-rule-producing verb there.
+
 ### Fixed
 
 - Mono overlays fetched the whole store. `attic clone --mono` single-branch-cloned correctly, then immediately widened `remote.origin.fetch` to `+refs/heads/*:…` and fetched again, pulling every other project's overlay history into this one's bare; `attic init --mono-remote` inherited the same wildcard from `git remote add`. A 31 KiB restore against an 18-overlay store cost 45 MiB, repeated per overlay on the machine. Both paths now pin the refspec to `repo/<fp>` alone, and `attic sync` re-pins an overlay still wired wide. Per-host overlays are unaffected — the wildcard is correct there.

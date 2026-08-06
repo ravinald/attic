@@ -2,11 +2,39 @@ package cmd
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/ravinald/attic/internal/ignore"
 	"github.com/ravinald/attic/internal/store"
 )
+
+// TestPartitionRegistered pins the distinction `attic add` diverges from `git add` to make: a path the
+// block already covers must not produce another rule, because the extra line ignores nothing further
+// and misreports the granularity the overlay is managed at.
+func TestPartitionRegistered(t *testing.T) {
+	blk := ignore.Block{Lines: []string{"docs-internal", ".drover.toml", "logs/*.json"}}
+
+	fresh, already := partitionRegistered(blk, []string{
+		"docs-internal",                         // exact entry
+		"docs-internal/CHANGELOG_2026_08_06.md", // covered by the directory
+		"notes",                                 // genuinely new
+		"logs/a.json",                           // a glob entry never counts as covering
+	})
+
+	if want := []string{"notes", "logs/a.json"}; !slices.Equal(fresh, want) {
+		t.Errorf("fresh = %q, want %q", fresh, want)
+	}
+	if len(already) != 2 {
+		t.Fatalf("already = %+v, want 2 entries", already)
+	}
+	if already[0].by != "docs-internal" || already[0].path != "docs-internal" {
+		t.Errorf("exact entry misreported: %+v", already[0])
+	}
+	if already[1].by != "docs-internal" {
+		t.Errorf("covered path should name the directory entry, got %+v", already[1])
+	}
+}
 
 func TestDuplicateScope(t *testing.T) {
 	settled := ignore.Block{Lines: []string{"docs-internal"}}
