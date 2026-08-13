@@ -45,7 +45,7 @@ Remove it from the host upstream (`git rm --cached path && git commit && git pus
 
 The host `.gitignore` hides overlay-owned paths from git and outranks the overlay's own `info/exclude`, so git will never volunteer a *new* file under `notes/` — not in `git status`, not with `-uall`. `attic status` asks for those by name and prints them under **"Untracked overlay files"** below git's own output. If that section lists your file, it exists but was never staged: `attic stage`. Use `attic stage`, not `attic add` — the file sits under a directory the block already registers, and `add` would append a redundant rule naming it.
 
-If you piped the command (`--porcelain`, `-s`, `-z`), that section is suppressed by design — it's prose, and it must not land in a stream a script parses. Run it bare to see it.
+If you piped the command (`--porcelain`, `-s`, `-z`), the header is dropped but the files still arrive, as `?? <path>` on git's own stream (`? <path>` under `--porcelain=v2`, NUL-terminated under `-z`). So `attic status --porcelain | wc -l` is a usable dirtiness check. Pass `--ignored` and attic stays quiet, because git's `!!` lines already cover the same files.
 
 ## `attic commit` says "nothing staged for commit"
 
