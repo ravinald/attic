@@ -52,26 +52,68 @@ func TestEnsureOverlayExcludePreservesGitsBoilerplate(t *testing.T) {
 	}
 }
 
-func TestMachineReadable(t *testing.T) {
+func TestParseStatusFormat(t *testing.T) {
 	cases := []struct {
 		name string
 		args []string
-		want bool
+		want statusFormat
 	}{
-		{"plain", nil, false},
-		{"short", []string{"-s"}, true},
-		{"long short", []string{"--short"}, true},
-		{"porcelain v2", []string{"--porcelain=v2"}, true},
-		{"nul separated", []string{"-z"}, true},
-		{"pathspec named -s after --", []string{"--", "-s"}, false},
-		{"unrelated flag", []string{"--branch"}, false},
+		{"plain", nil, statusFormat{}},
+		{"short", []string{"-s"}, statusFormat{machine: true}},
+		{"long short", []string{"--short"}, statusFormat{machine: true}},
+		{"porcelain", []string{"--porcelain"}, statusFormat{machine: true}},
+		{"porcelain v1", []string{"--porcelain=v1"}, statusFormat{machine: true}},
+		{"porcelain v2", []string{"--porcelain=v2"}, statusFormat{machine: true, v2: true}},
+		{"nul separated", []string{"-z"}, statusFormat{machine: true, nul: true}},
+		{"porcelain v2 nul", []string{"--porcelain=v2", "-z"}, statusFormat{machine: true, v2: true, nul: true}},
+		{"ignored", []string{"--porcelain", "--ignored"}, statusFormat{machine: true, ignored: true}},
+		{"ignored matching", []string{"--porcelain", "--ignored=matching"}, statusFormat{machine: true, ignored: true}},
+		{"ignored without porcelain", []string{"--ignored"}, statusFormat{ignored: true}},
+		{"pathspec named -s after --", []string{"--", "-s"}, statusFormat{}},
+		{"unrelated flag", []string{"--branch"}, statusFormat{}},
+		{"bundled short flags", []string{"-sz"}, statusFormat{machine: true, nul: true}},
+		{"bundled other order", []string{"-zbs"}, statusFormat{machine: true, nul: true}},
+		{"bundled short only", []string{"-sb"}, statusFormat{machine: true}},
+		{"untracked flag with value is not a cluster", []string{"-uall"}, statusFormat{}},
+		{"short with untracked", []string{"-su"}, statusFormat{machine: true}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := machineReadable(tc.args); got != tc.want {
-				t.Errorf("machineReadable(%q) = %v, want %v", tc.args, got, tc.want)
+			if got := parseStatusFormat(tc.args); got != tc.want {
+				t.Errorf("parseStatusFormat(%q) = %+v, want %+v", tc.args, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestQuotePathsMatchesGit covers the reason machine-readable output re-asks git instead of
+// formatting the paths itself: a name needing C-style quoting must reach a parser quoted, and a
+// glob-looking name must survive the round trip that quoting costs.
+func TestQuotePathsMatchesGit(t *testing.T) {
+	hr, repo := newOverlayFixture(t)
+	writeFile(t, hr.Root, "docs-internal/glob[1].md", "literal")
+	writeFile(t, hr.Root, `docs-internal/qu"ote.md`, "quoted")
+	writeFile(t, hr.Root, "docs-internal/café.md", "utf8")
+
+	scope, err := overlayScope(hr, repo)
+	if err != nil {
+		t.Fatalf("overlayScope: %v", err)
+	}
+	files, err := reportableUntracked(repo, scope)
+	if err != nil {
+		t.Fatalf("reportableUntracked: %v", err)
+	}
+	got, err := quotePaths(repo, files)
+	if err != nil {
+		t.Fatalf("quotePaths: %v", err)
+	}
+	want := []string{
+		`"docs-internal/caf\303\251.md"`,
+		"docs-internal/glob[1].md",
+		`"docs-internal/qu\"ote.md"`,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("quotePaths = %q, want %q", got, want)
 	}
 }
 
