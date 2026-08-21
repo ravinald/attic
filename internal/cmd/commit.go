@@ -24,6 +24,9 @@ var commitCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		if err := ensureNoSequencer(repo, "commit"); err != nil {
+			return err
+		}
 		if err := preflight(hr, repo, args); err != nil {
 			return err
 		}

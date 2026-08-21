@@ -26,6 +26,9 @@ With arguments it stages only those paths, and refuses any the block does not al
 		if err != nil {
 			return err
 		}
+		if err := ensureNoSequencer(repo, "stage"); err != nil {
+			return err
+		}
 		blk, err := ignore.Load(gitignorePath(hr))
 		if err != nil {
 			return err

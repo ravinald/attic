@@ -35,6 +35,9 @@ Refuses to run with a dirty index or modifications to overlay-tracked files. Unt
 		if err != nil {
 			return err
 		}
+		if err := ensureNoSequencer(repo, "sync"); err != nil {
+			return err
+		}
 		if err := ensureCleanIndex(repo); err != nil {
 			return err
 		}

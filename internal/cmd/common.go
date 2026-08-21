@@ -331,3 +331,14 @@ func relativiseToHost(hostRoot string, args []string) ([]string, error) {
 	}
 	return rels, nil
 }
+
+// ensureNoSequencer refuses a write to an overlay stopped mid-rebase (or merge, cherry-pick, revert,
+// am, bisect). Every write path needs its own call rather than one in openOverlay, because the
+// recovery — `attic exec rebase --continue` — opens the same overlay.
+func ensureNoSequencer(repo gitwrap.Repo, verb string) error {
+	seq, err := repo.Sequencer()
+	if err != nil {
+		return err
+	}
+	return seq.Err(verb)
+}

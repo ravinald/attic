@@ -9,10 +9,14 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/ravinald/attic/internal/gitwrap"
 	"github.com/ravinald/attic/internal/host"
 	"github.com/ravinald/attic/internal/store"
 	"github.com/spf13/cobra"
 )
+
+// findingWedged marks an overlay stopped part-way through a rebase, merge, or cherry-pick.
+const findingWedged = "wedged"
 
 var doctorFlags struct {
 	fix   bool
@@ -78,11 +82,20 @@ Plain --fix stays local — offline and CI runs never touch the network unless y
 
 		if !doctorFlags.fix {
 			printFindings(cmd.OutOrStdout(), findings)
-			fixable := 0
+			fixable, wedged := 0, 0
 			for _, f := range findings {
-				if f.fixable {
+				switch {
+				case f.kind == findingWedged:
+					wedged++
+				case f.fixable:
 					fixable++
 				}
+			}
+			// A wedged overlay outranks drift in the exit code: it has stopped syncing, so a hook that
+			// treats doctor's zero exit as "nothing to do" would keep reporting healthy while overlay
+			// history piles up locally. Other anomalies stay exit-0, as they always have.
+			if wedged > 0 {
+				return fmt.Errorf("%d overlay(s) stopped mid-operation and no longer syncing", wedged)
 			}
 			if fixable > 0 {
 				return fmt.Errorf("%d overlay(s) with fixable drift — run `attic doctor --fix`", fixable)
@@ -139,6 +152,14 @@ func classify(m store.Meta, overrides map[string]string) *finding {
 			detail: fmt.Sprintf("host root commit now fingerprints %s (history rewritten) — run `attic rekey` in %s", live, m.HostRoot)}
 	}
 
+	// Reported ahead of any label question: a wedged overlay stops syncing entirely, and doctor is
+	// the only sweep that sees every overlay on the machine. Never auto-fixed — choosing between
+	// --continue and --abort is a call about which side of a conflict survives.
+	if seq, err := overlaySequencer(m); err == nil && seq.InProgress() {
+		return &finding{fp: fp, label: m.DisplayLabel(), kind: findingWedged, anomaly: true,
+			detail: fmt.Sprintf("stopped mid-%s — resolve in %s with `attic exec %s`", seq.Op, m.HostRoot, seq.Abort)}
+	}
+
 	effOrigin := m.OriginURL
 	var newOrigin string
 	if live, ok := liveOrigin(m.HostRoot); ok && live != m.OriginURL {
@@ -177,6 +198,16 @@ func classify(m store.Meta, overrides map[string]string) *finding {
 	}
 	return &finding{fp: fp, label: m.DisplayLabel(), kind: kind, newLabel: slug, newOrigin: newOrigin,
 		fixable: true, detail: fmt.Sprintf("label %q → %q", m.DisplayLabel(), slug)}
+}
+
+// overlaySequencer opens an overlay by fingerprint to ask whether it is stopped mid-operation.
+// doctor sweeps by metadata rather than from inside a host repo, so it cannot use openOverlay.
+func overlaySequencer(m store.Meta) (gitwrap.Sequencer, error) {
+	bare, err := store.BareDir(m.Fingerprint)
+	if err != nil {
+		return gitwrap.Sequencer{}, err
+	}
+	return gitwrap.Repo{GitDir: bare, WorkTree: m.HostRoot}.Sequencer()
 }
 
 // applyFindings writes the fixes doctor is allowed to make. It returns how many it applied, the
