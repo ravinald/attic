@@ -4,14 +4,20 @@ import "github.com/spf13/cobra"
 
 // Each entry registers a thin pass-through to git in the overlay context.
 // The DisableFlagParsing trick lets users append any git flags without cobra interpreting them.
+//
+// integrates marks the two that must not run on an overlay stopped part-way through an operation:
+// pull would start a second integration on top of the stopped one, and push would publish whatever
+// resolution the stopped one left behind. fetch, log and diff read, so they stay available for
+// working out what went wrong.
 var passthroughs = []struct {
 	use, short string
+	integrates bool
 }{
-	{"push", "Push overlay commits (git push)."},
-	{"pull", "Pull overlay commits (git pull)."},
-	{"fetch", "Fetch overlay refs (git fetch)."},
-	{"log", "Show overlay history (git log)."},
-	{"diff", "Show overlay diff (git diff)."},
+	{use: "push", short: "Push overlay commits (git push).", integrates: true},
+	{use: "pull", short: "Pull overlay commits (git pull).", integrates: true},
+	{use: "fetch", short: "Fetch overlay refs (git fetch)."},
+	{use: "log", short: "Show overlay history (git log)."},
+	{use: "diff", short: "Show overlay diff (git diff)."},
 }
 
 func init() {
@@ -24,6 +30,11 @@ func init() {
 				_, repo, err := openOverlay()
 				if err != nil {
 					return err
+				}
+				if p.integrates {
+					if err := ensureNoSequencer(repo, p.use); err != nil {
+						return err
+					}
 				}
 				return repo.Stream(append([]string{p.use}, args...)...)
 			},

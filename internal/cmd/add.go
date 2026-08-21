@@ -30,6 +30,9 @@ leaves the block unchanged, since another rule there would ignore nothing furthe
 		if err != nil {
 			return err
 		}
+		if err := ensureNoSequencer(repo, "add"); err != nil {
+			return err
+		}
 		rels, err := relativiseToHost(hr.Root, args)
 		if err != nil {
 			return err

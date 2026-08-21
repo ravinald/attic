@@ -15,8 +15,39 @@ Most likely a symlink mismatch: macOS's `/var` is a symlink to `/private/var`, s
 ## `attic clone --mono` says "no overlay branch repo/<fp>"
 
 The host repo on this machine has a fingerprint that doesn't exist on the mono remote. Causes:
+
 - Overlay was never pushed from any other machine yet — run `attic init --mono-remote <url>` here instead.
 - The host repo has been rebased to rewrite its root commit, so the fingerprint changed. List branches on the remote (`git ls-remote <url> 'repo/*'`) and either rename one or start fresh.
+
+## `attic pull`/`sync` says the overlay is mid-rebase
+
+A previous `attic sync` rebase stopped on a conflict and nobody finished it. Every write command refuses until you do:
+
+```
+attic: sync: overlay is mid-rebase, so this would write over an unresolved conflict.
+Finish it with `attic exec rebase --continue`, or discard it with `attic exec rebase --abort`
+```
+
+`attic fetch`, `log` and `diff` still work, so start there:
+
+```bash
+attic exec status          # which paths conflict
+attic exec diff            # the conflict itself
+attic exec rebase --abort  # discard the rebase, keep your local commits
+```
+
+Two overlay files conflict most often: a dated changelog two machines both appended to, and a `.jsonl` ledger both appended to. Both are append-only by intent, so `--abort` then a hand-merged union usually beats letting either side win. Resolve, `attic stage`, `attic commit`, `attic sync`.
+
+The refusals exist because the recovery is not obvious from git's own message. Before them, `attic stage` would mark the conflicted path resolved with whatever was in the work tree and `attic commit` would bake that in, leaving a clean index over an open rebase — git then reported "nothing to commit, working tree clean" while every `sync` died on `fatal: It seems that there is already a rebase-merge directory`, naming a path inside attic's private store. A snapshot hook driving that loop discards one side of a conflict silently, once per run.
+
+To find one you have not opened lately, `attic doctor` reports it across every overlay on the machine and exits non-zero:
+
+```
+STATUS  FP            LABEL                      DETAIL
+wedged  c7ba88d2b618  ravinald/netbox-flow-view  stopped mid-rebase — resolve in /Users/you/git/netbox-flow-view with `attic exec rebase --abort`
+```
+
+doctor never resolves one under `--fix`: choosing between `--continue` and `--abort` decides which side of a conflict survives.
 
 ## `git push` is rejected: "non-fast-forward"
 
@@ -43,7 +74,7 @@ Remove it from the host upstream (`git rm --cached path && git commit && git pus
 
 ## `attic status` says clean, but I know I added a file
 
-The host `.gitignore` hides overlay-owned paths from git and outranks the overlay's own `info/exclude`, so git will never volunteer a *new* file under `notes/` — not in `git status`, not with `-uall`. `attic status` asks for those by name and prints them under **"Untracked overlay files"** below git's own output. If that section lists your file, it exists but was never staged: `attic stage`. Use `attic stage`, not `attic add` — the file sits under a directory the block already registers, and `add` would append a redundant rule naming it.
+The host `.gitignore` hides overlay-owned paths from git and outranks the overlay's own `info/exclude`, so git will never volunteer a _new_ file under `notes/` — not in `git status`, not with `-uall`. `attic status` asks for those by name and prints them under **"Untracked overlay files"** below git's own output. If that section lists your file, it exists but was never staged: `attic stage`. Use `attic stage`, not `attic add` — the file sits under a directory the block already registers, and `add` would append a redundant rule naming it.
 
 If you piped the command (`--porcelain`, `-s`, `-z`), the header is dropped but the files still arrive, as `?? <path>` on git's own stream (`? <path>` under `--porcelain=v2`, NUL-terminated under `-z`). So `attic status --porcelain | wc -l` is a usable dirtiness check. Pass `--ignored` and attic stays quiet, because git's `!!` lines already cover the same files.
 
@@ -70,7 +101,7 @@ Two things to know before rewriting a host repo's history, because both bite aft
 
 `push` is **contribute-only**: it fills in fingerprints the shared map has never seen and never overwrites an existing entry. That's deliberate — it's what stops one machine's push clobbering a name someone curated. To rename an existing entry, use `attic labels edit`, the only writer allowed to overwrite.
 
-If the name is only wrong on *this* machine, you want a local override instead: `attic label set <name>` (never pushed).
+If the name is only wrong on _this_ machine, you want a local override instead: `attic label set <name>` (never pushed).
 
 ## `attic doctor` reports an overlay as `overridden` and won't fix it
 

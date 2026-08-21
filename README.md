@@ -5,15 +5,15 @@ Track files alongside a git repo without committing them to it.
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 Status: **alpha**, latest release `v0.2.0`. See [CHANGELOG.md](CHANGELOG.md).
 
-`attic` keeps a per-host-repo *bare* git overlay whose git directory sits outside the host work tree. Overlay files stay in the repo where you actually use them, while their history lives elsewhere on its own remote — and a marker block in the host's `.gitignore` stops them ever leaking upstream.
+`attic` keeps a per-host-repo _bare_ git overlay whose git directory sits outside the host work tree. Overlay files stay in the repo where you actually use them, while their history lives elsewhere on its own remote — and a marker block in the host's `.gitignore` stops them ever leaking upstream.
 
 ## What goes in an overlay
 
-Anything that belongs *with* a repo but not *in* it — the files you lose on a fresh clone and would rather not justify in a PR:
+Anything that belongs _with_ a repo but not _in_ it — the files you lose on a fresh clone and would rather not justify in a PR:
 
 - **Notes and working docs** — design scratch, a running TODO, investigation logs, whatever you'd keep in a `notes/` or `docs-internal/` directory.
 - **Local dev config** — an `.envrc` for direnv, editor or debugger launch settings, a `Makefile.local` with per-machine paths.
-- **AI assistant instructions** — a project-local `CLAUDE.md`, `AGENTS.md`, or `.cursorrules` that encodes how *you* work rather than house style.
+- **AI assistant instructions** — a project-local `CLAUDE.md`, `AGENTS.md`, or `.cursorrules` that encodes how _you_ work rather than house style.
 - **Fork-local scripts and patches** — helpers you never intend to upstream, on a repo you don't control.
 - **Employer or client context on a public repo** — the notes you can't commit to an open-source project.
 - **Build output worth keeping** — benchmark baselines or profiles you want on every machine without bloating the repo.
@@ -98,32 +98,32 @@ attic clone git@github.com:you/myproject-attic.git
 
 ## Commands
 
-| Command | Purpose |
-|---|---|
-| `attic init [--remote URL \| --mono-remote URL \| --gh-private]` | Create overlay for the current host repo. |
-| `attic deinit [--force]` | Remove the local overlay + `.gitignore` block (work-tree files stay). Refuses to drop unpushed commits without `--force`. |
-| `attic clone [remote] [--mono] [--force]` | Restore an existing overlay on a new machine. With `--mono`, the remote defaults to this machine's sole mono remote. Refuses to clobber existing files without `--force`. |
-| `attic add <path>... [--on-duplicate off\|warn\|manage]` | **Register** paths: append to host `.gitignore` block and stage. Warns when a path is already registered or already covered by a broader entry, and leaves the block unchanged in that case. `--on-duplicate` overrides the policy for redundant outside rules (see below). |
-| `attic stage [<path>...]` | **Re-stage** new and modified files under already-registered paths, without touching the `.gitignore` block. No arguments stages every managed entry. Refuses paths the block doesn't cover. |
-| `attic rm <path>... [--delete]` | Stop tracking; `--delete` also removes the file. |
-| `attic config get\|set\|list [--global] <key> [value]` | Read/write settings (`gitignore.on_duplicate`, `status.ignore`). `set` targets the current repo, or `--global` (`~/.config/attic/config.toml`). |
-| `attic eject [--check]` | Evict managed paths from the **host** index (never from disk or the overlay); `--check` reports without changing. |
-| `attic commit [-m <msg>] [-a] [--allow-empty]` | Commit staged overlay changes. Without `-m`, uses a timestamped snapshot message; `-a` also stages edits to tracked files. |
-| `attic status` | `git status` for the overlay, plus overlay files the host `.gitignore` hides from git (minus any `status.ignore` patterns). |
-| `attic push` `pull` `fetch` `log` `diff` | Pass-through to git. |
-| `attic sync [--strategy=rebase\|merge]` | Fetch + integrate + push. Refuses on a dirty index or edits to overlay-tracked files; untracked host files are ignored. |
-| `attic ls` | List paths tracked in the overlay. |
-| `attic list [--fetch] [--wide] [--json]` | Show every overlay on this machine with label, fp, sync state. |
-| `attic where [--fp]` | Print bare path, fingerprint, remote. |
-| `attic label get` | Print the display name: local override, else shared/auto name, else basename. |
-| `attic label set <name>` / `--unset` | Set (or clear) a per-machine display override in `~/.config/attic` — never pushed. |
-| `attic label reset [--force]` | Clear ALL local overrides on this machine (force-reset to shared/auto names); lists them without `--force`. |
-| `attic labels edit [--remote URL]` | Edit the whole shared map in `$EDITOR`; validates, regenerates the README, publishes on save. |
-| `attic labels push` / `attic labels pull` `[--remote URL]` | Contribute new overlays to the map (never overwrites) / cache the map's names locally. `--remote` disambiguates when the machine has several mono remotes. |
-| `attic doctor [--fix] [--force] [--push]` | Audit every overlay's label against its origin remote; report drift, `--fix` corrects it, `--push` publishes the corrected map. Also reports overlays orphaned by a host history rewrite. |
-| `attic rekey [--dry-run]` | Re-point an overlay orphaned by a host history rewrite onto the repo's current fingerprint. Moves storage, renames the `repo/<fp>` branch, rewires config and meta; never rewrites overlay history. |
-| `attic exec -- <git-args>` | Run any git command against the overlay. |
-| `attic version` | Version, commit, build date. |
+| Command                                                          | Purpose                                                                                                                                                                                                                                                                     |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `attic init [--remote URL \| --mono-remote URL \| --gh-private]` | Create overlay for the current host repo.                                                                                                                                                                                                                                   |
+| `attic deinit [--force]`                                         | Remove the local overlay + `.gitignore` block (work-tree files stay). Refuses to drop unpushed commits without `--force`.                                                                                                                                                   |
+| `attic clone [remote] [--mono] [--force]`                        | Restore an existing overlay on a new machine. With `--mono`, the remote defaults to this machine's sole mono remote. Refuses to clobber existing files without `--force`.                                                                                                   |
+| `attic add <path>... [--on-duplicate off\|warn\|manage]`         | **Register** paths: append to host `.gitignore` block and stage. Warns when a path is already registered or already covered by a broader entry, and leaves the block unchanged in that case. `--on-duplicate` overrides the policy for redundant outside rules (see below). |
+| `attic stage [<path>...]`                                        | **Re-stage** new and modified files under already-registered paths, without touching the `.gitignore` block. No arguments stages every managed entry. Refuses paths the block doesn't cover.                                                                                |
+| `attic rm <path>... [--delete]`                                  | Stop tracking; `--delete` also removes the file.                                                                                                                                                                                                                            |
+| `attic config get\|set\|list [--global] <key> [value]`           | Read/write settings (`gitignore.on_duplicate`, `status.ignore`). `set` targets the current repo, or `--global` (`~/.config/attic/config.toml`).                                                                                                                             |
+| `attic eject [--check]`                                          | Evict managed paths from the **host** index (never from disk or the overlay); `--check` reports without changing.                                                                                                                                                           |
+| `attic commit [-m <msg>] [-a] [--allow-empty]`                   | Commit staged overlay changes. Without `-m`, uses a timestamped snapshot message; `-a` also stages edits to tracked files.                                                                                                                                                  |
+| `attic status`                                                   | `git status` for the overlay, plus overlay files the host `.gitignore` hides from git (minus any `status.ignore` patterns).                                                                                                                                                 |
+| `attic push` `pull` `fetch` `log` `diff`                         | Pass-through to git.                                                                                                                                                                                                                                                        |
+| `attic sync [--strategy=rebase\|merge]`                          | Fetch + integrate + push. Refuses on a dirty index or edits to overlay-tracked files; untracked host files are ignored.                                                                                                                                                     |
+| `attic ls`                                                       | List paths tracked in the overlay.                                                                                                                                                                                                                                          |
+| `attic list [--fetch] [--wide] [--json]`                         | Show every overlay on this machine with label, fp, sync state.                                                                                                                                                                                                              |
+| `attic where [--fp]`                                             | Print bare path, fingerprint, remote.                                                                                                                                                                                                                                       |
+| `attic label get`                                                | Print the display name: local override, else shared/auto name, else basename.                                                                                                                                                                                               |
+| `attic label set <name>` / `--unset`                             | Set (or clear) a per-machine display override in `~/.config/attic` — never pushed.                                                                                                                                                                                          |
+| `attic label reset [--force]`                                    | Clear ALL local overrides on this machine (force-reset to shared/auto names); lists them without `--force`.                                                                                                                                                                 |
+| `attic labels edit [--remote URL]`                               | Edit the whole shared map in `$EDITOR`; validates, regenerates the README, publishes on save.                                                                                                                                                                               |
+| `attic labels push` / `attic labels pull` `[--remote URL]`       | Contribute new overlays to the map (never overwrites) / cache the map's names locally. `--remote` disambiguates when the machine has several mono remotes.                                                                                                                  |
+| `attic doctor [--fix] [--force] [--push]`                        | Audit every overlay's label against its origin remote; report drift, `--fix` corrects it, `--push` publishes the corrected map. Also reports overlays orphaned by a host history rewrite.                                                                                   |
+| `attic rekey [--dry-run]`                                        | Re-point an overlay orphaned by a host history rewrite onto the repo's current fingerprint. Moves storage, renames the `repo/<fp>` branch, rewires config and meta; never rewrites overlay history.                                                                         |
+| `attic exec -- <git-args>`                                       | Run any git command against the overlay.                                                                                                                                                                                                                                    |
+| `attic version`                                                  | Version, commit, build date.                                                                                                                                                                                                                                                |
 
 ## Labels: naming your overlays
 
@@ -170,6 +170,8 @@ attic doctor --fix --force   # also adopt the origin slug over a label you set b
 attic doctor --fix --push    # ...and publish the corrected map to each affected mono remote
 ```
 
+`doctor` also reports an overlay stopped part-way through a rebase, merge or cherry-pick as `wedged`, and exits non-zero for it. Such an overlay has stopped syncing entirely while its history piles up locally, and it will not surface on its own from a repo you haven't opened lately. It is never resolved under `--fix`: picking `--continue` over `--abort` decides which side of a conflict survives. See [`docs/troubleshooting.md`](docs/troubleshooting.md).
+
 `doctor` reconciles only the auto (origin-derived) label in local `meta.toml`; it never touches a curated name in the shared map (push is contribute-only). An overlay with a **local override** is reported as `overridden` and left entirely alone — doctor honours your local choice. To hand it back to doctor, clear the override with `attic label reset`. Plain `--fix` stays local, so hooks and offline runs never touch the network; add `--push` to chain `attic labels push` for the mono remotes whose overlays changed.
 
 Three commands manage the shared map on `_attic/labels`:
@@ -206,29 +208,29 @@ Edit the block by hand only at your own risk — `attic add`/`rm` will rewrite i
 
 ### Redundant rules outside the block
 
-If a path you `attic add` is already ignored by a rule *outside* the block (a `notes/` line you added by hand before adopting attic), `on_duplicate` governs what happens:
+If a path you `attic add` is already ignored by a rule _outside_ the block (a `notes/` line you added by hand before adopting attic), `on_duplicate` governs what happens:
 
-| Mode | Behavior |
-|---|---|
-| `off` | Add to the block, leave the outside rule alone. |
-| `warn` *(default)* | Add to the block, print which outside rule is now redundant. |
-| `manage` | Add to the block **and delete** the redundant outside rule so the block is the single source. |
+| Mode               | Behavior                                                                                      |
+| ------------------ | --------------------------------------------------------------------------------------------- |
+| `off`              | Add to the block, leave the outside rule alone.                                               |
+| `warn` _(default)_ | Add to the block, print which outside rule is now redundant.                                  |
+| `manage`           | Add to the block **and delete** the redundant outside rule so the block is the single source. |
 
 Precedence, highest first: `--on-duplicate` flag › `ATTIC_GITIGNORE_ON_DUPLICATE` env › per-repo (`attic config set gitignore.on_duplicate …`) › global (`--global`) › `warn`. Only slash-equivalent, glob-free rules qualify for `manage` — attic never second-guesses a real pattern like `*.local`, and never touches lines inside another tool's markers.
 
 `warn` speaks only for paths a run actually adopts, so re-running `attic add notes/` to stage new files under an already-managed directory stays quiet. `manage` still scans every path, so switching to it after the fact absorbs a rule an earlier `off`/`warn` run left behind.
 
-The block alone isn't enough: `.gitignore` only suppresses *untracked* paths, so it can't untrack a path already in the host index or stop a `git add -f`. So `attic add` also runs `git rm --cached` against the host after adopting a path, and `attic clone` rewrites the block on restore. If a path is already stuck in the host index (a stray force-add, a pre-`attic` commit), `attic eject` evicts it — working-tree files and overlay history stay put. `attic eject --check` reports without changing, so a pre-commit hook can gate on it.
+The block alone isn't enough: `.gitignore` only suppresses _untracked_ paths, so it can't untrack a path already in the host index or stop a `git add -f`. So `attic add` also runs `git rm --cached` against the host after adopting a path, and `attic clone` rewrites the block on restore. If a path is already stuck in the host index (a stray force-add, a pre-`attic` commit), `attic eject` evicts it — working-tree files and overlay history stay put. `attic eject --check` reports without changing, so a pre-commit hook can gate on it.
 
 ### The overlay's exclude file
 
-The overlay's work tree is the *whole* host repo, so by default every host file reads as untracked to it. attic writes `/*` into a marker block in the overlay's `info/exclude` to suppress that; the `git add --force` behind `attic add` outranks it, so adopting a path still works. Overlays created before this existed are healed on the next command.
+The overlay's work tree is the _whole_ host repo, so by default every host file reads as untracked to it. attic writes `/*` into a marker block in the overlay's `info/exclude` to suppress that; the `git add --force` behind `attic add` outranks it, so adopting a path still works. Overlays created before this existed are healed on the next command.
 
-That cuts the other way for the paths the overlay owns: the host `.gitignore` outranks `info/exclude`, so git will never volunteer a *new* file under `notes/` — not in `git status`, not with `-uall`. `attic status` asks for those by name and lists them separately, which is the only reason a file you just wrote doesn't sit there unnoticed until you wonder why it never pushed.
+That cuts the other way for the paths the overlay owns: the host `.gitignore` outranks `info/exclude`, so git will never volunteer a _new_ file under `notes/` — not in `git status`, not with `-uall`. `attic status` asks for those by name and lists them separately, which is the only reason a file you just wrote doesn't sit there unnoticed until you wonder why it never pushed.
 
 ### Quieting that list: `status.ignore`
 
-Asking by name is unconditional — attic queries `git ls-files --others --ignored`, and every file under overlay scope is ignored by construction. So no `.gitignore` or `info/exclude` rule can trim the list; adding one only makes a file *more* certainly ignored, hence *more* certainly reported. Finder droppings pile up there and a genuinely new file gets skimmed past.
+Asking by name is unconditional — attic queries `git ls-files --others --ignored`, and every file under overlay scope is ignored by construction. So no `.gitignore` or `info/exclude` rule can trim the list; adding one only makes a file _more_ certainly ignored, hence _more_ certainly reported. Finder droppings pile up there and a genuinely new file gets skimmed past.
 
 `status.ignore` filters after the query:
 
@@ -236,11 +238,11 @@ Asking by name is unconditional — attic queries `git ls-files --others --ignor
 attic config set --global status.ignore '.DS_Store,Thumbs.db'
 ```
 
-| Pattern form | Matches |
-|---|---|
-| `.DS_Store`, `*.tmp` | the **basename**, at any depth |
-| `scratch/` | everything under a directory of that name, at any depth |
-| `notes/*.tmp` | the whole host-relative path |
+| Pattern form         | Matches                                                 |
+| -------------------- | ------------------------------------------------------- |
+| `.DS_Store`, `*.tmp` | the **basename**, at any depth                          |
+| `scratch/`           | everything under a directory of that name, at any depth |
+| `notes/*.tmp`        | the whole host-relative path                            |
 
 `**/.DS_Store` is accepted as a synonym for the basename form. attic ships **no** default patterns — a filter that hides a file the overlay should have adopted is worse than three lines of `.DS_Store`, so you opt in.
 
@@ -249,7 +251,7 @@ Layers **union** rather than override: `ATTIC_STATUS_IGNORE` env + per-repo (`at
 ## Why not vcsh / repoverlay / chezmoi?
 
 - **`vcsh`** is the same mechanism but `$HOME`-flavoured: no concept of a host repo, you key overlays by name and you remember those names on every machine. `attic` keys by the host repo's root commit and auto-attaches based on cwd.
-- **`repoverlay`** solves the inverse problem: pull *shared* overlays (editor configs) into many host repos. Useful, but not for "version-control this one repo's private docs."
+- **`repoverlay`** solves the inverse problem: pull _shared_ overlays (editor configs) into many host repos. Useful, but not for "version-control this one repo's private docs."
 - **`chezmoi`/`yadm`** are dotfile managers — wrong scope.
 
 ## Build / quality
