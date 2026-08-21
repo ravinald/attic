@@ -1,6 +1,7 @@
 package gitwrap
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,6 +15,12 @@ import (
 type Sequencer struct {
 	Op    string // "rebase", "merge", "cherry-pick", "revert", "am", "bisect"; empty when idle
 	Abort string // the git subcommand that unwinds it, e.g. "rebase --abort"
+
+	// Orphaned counts commits reachable only from HEAD, which --abort destroys for good: it resets
+	// the branch to where the operation started, and a snapshot hook that keeps committing over a
+	// wedge leaves its commits on no other ref. Zero for a fresh wedge, and zero once they are
+	// reachable from a branch or a remote, which is exactly when --abort is safe again.
+	Orphaned int
 }
 
 // InProgress reports whether git is stopped part-way through an operation.
@@ -26,10 +33,16 @@ func (s Sequencer) Err(verb string) error {
 	if !s.InProgress() {
 		return nil
 	}
-	cont := strings.SplitN(s.Abort, " ", 2)[0] + " --continue"
-	return fmt.Errorf("%s: overlay is mid-%s, so this would write over an unresolved conflict.\n"+
-		"Finish it with `attic exec %s`, or discard it with `attic exec %s`",
-		verb, s.Op, cont, s.Abort)
+	op := strings.SplitN(s.Abort, " ", 2)[0]
+	msg := fmt.Sprintf("%s: overlay is mid-%s, so this would write over an unresolved conflict.\n"+
+		"Finish it with `attic exec %s --continue`, or discard it with `attic exec %s`",
+		verb, s.Op, op, s.Abort)
+	if s.Orphaned > 0 {
+		msg += fmt.Sprintf(".\n%d commit(s) are reachable only from HEAD, and `%s` would destroy them — "+
+			"`attic exec %s --quit` closes the operation and keeps them (HEAD is left detached; "+
+			"re-point the branch with `attic exec branch -f <branch> HEAD`)", s.Orphaned, s.Abort, op)
+	}
+	return errors.New(msg)
 }
 
 // sequencerMarkers maps a path inside the git dir to the operation its presence proves. Ordered
@@ -57,8 +70,26 @@ func (r Repo) Sequencer() (Sequencer, error) {
 	}
 	for _, m := range sequencerMarkers {
 		if _, err := os.Lstat(filepath.Join(dir, m.path)); err == nil {
-			return Sequencer{Op: m.op, Abort: m.abort}, nil
+			return Sequencer{Op: m.op, Abort: m.abort, Orphaned: r.orphanedCommits()}, nil
 		}
 	}
 	return Sequencer{}, nil
+}
+
+// orphanedCommits counts commits reachable from HEAD and from no ref at all. Counting against
+// REBASE_HEAD instead over-reports, because the commits the operation had already replayed onto the
+// new base are reachable from HEAD too and are not at risk. Advisory: it only decides which recovery
+// command the message leads with, so any error here reports zero and the message stays correct.
+func (r Repo) orphanedCommits() int {
+	// Not `--not --all`: git documents --all as "all the refs in refs/, along with HEAD", so it
+	// excludes the very tip being asked about and the count is always zero.
+	out, err := r.cmd("rev-list", "--count", "HEAD", "--not", "--branches", "--tags", "--remotes").Output()
+	if err != nil {
+		return 0
+	}
+	var n int
+	if _, err := fmt.Sscanf(strings.TrimSpace(string(out)), "%d", &n); err != nil {
+		return 0
+	}
+	return n
 }

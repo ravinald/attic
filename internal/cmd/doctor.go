@@ -156,8 +156,12 @@ func classify(m store.Meta, overrides map[string]string) *finding {
 	// the only sweep that sees every overlay on the machine. Never auto-fixed — choosing between
 	// --continue and --abort is a call about which side of a conflict survives.
 	if seq, err := overlaySequencer(m); err == nil && seq.InProgress() {
-		return &finding{fp: fp, label: m.DisplayLabel(), kind: findingWedged, anomaly: true,
-			detail: fmt.Sprintf("stopped mid-%s — resolve in %s with `attic exec %s`", seq.Op, m.HostRoot, seq.Abort)}
+		detail := fmt.Sprintf("stopped mid-%s — resolve in %s with `attic exec %s`", seq.Op, m.HostRoot, seq.Abort)
+		if seq.Orphaned > 0 {
+			detail = fmt.Sprintf("stopped mid-%s with %d commit(s) on no other ref — resolve in %s, `--quit` to keep them",
+				seq.Op, seq.Orphaned, m.HostRoot)
+		}
+		return &finding{fp: fp, label: m.DisplayLabel(), kind: findingWedged, anomaly: true, detail: detail}
 	}
 
 	effOrigin := m.OriginURL

@@ -28,15 +28,40 @@ attic: sync: overlay is mid-rebase, so this would write over an unresolved confl
 Finish it with `attic exec rebase --continue`, or discard it with `attic exec rebase --abort`
 ```
 
-`attic fetch`, `log` and `diff` still work, so start there:
+`attic fetch`, `log`, `diff` and `exec` still work, so start there:
 
 ```bash
-attic exec status          # which paths conflict
-attic exec diff            # the conflict itself
-attic exec rebase --abort  # discard the rebase, keep your local commits
+attic exec status   # which paths conflict
+attic exec diff     # the conflict itself
 ```
 
-Two overlay files conflict most often: a dated changelog two machines both appended to, and a `.jsonl` ledger both appended to. Both are append-only by intent, so `--abort` then a hand-merged union usually beats letting either side win. Resolve, `attic stage`, `attic commit`, `attic sync`.
+**Check for commits on no other ref before choosing how to unwind it.** `--abort` resets the branch to where the rebase started, so it destroys anything committed since — and a snapshot hook driving the loop above commits once per run. The refusal counts them for you; `attic doctor` reports the same count. With none, `--abort` is the simple answer:
+
+```bash
+attic exec rebase --abort
+```
+
+With any, use `--quit`, which closes the operation and leaves the branch tip alone. It leaves HEAD detached, so re-point the branch yourself:
+
+```bash
+fp=$(attic where | grep -o '[0-9a-f]\{12\}' | head -1)
+attic exec rebase --quit
+attic exec branch -f "repo/$fp" HEAD
+attic exec symbolic-ref HEAD "refs/heads/repo/$fp"
+```
+
+Either way the two sides still have to reconcile, and `--abort` alone does not do it: it returns you to this machine's line, which is still missing whatever the remote added. Rebase onto the remote for real and resolve each conflict:
+
+```bash
+attic exec fetch origin
+attic exec rebase "origin/repo/$fp"
+# ...resolve, then:
+attic exec add --force -- <path>
+attic exec -c core.editor=true rebase --continue
+attic sync
+```
+
+Two overlay files conflict most often: a dated changelog two machines both appended to, and a `.jsonl` ledger both appended to. Both are append-only by intent, so a hand-merged union beats letting either side win — keep every section from both, remote's first. Expect the conflicted file to contain nested conflict markers if the loop above ran, since it commits them; take the union from the two clean sides (`attic exec show :2:<path>` and `:3:<path>`) rather than untangling them.
 
 The refusals exist because the recovery is not obvious from git's own message. Before them, `attic stage` would mark the conflicted path resolved with whatever was in the work tree and `attic commit` would bake that in, leaving a clean index over an open rebase — git then reported "nothing to commit, working tree clean" while every `sync` died on `fatal: It seems that there is already a rebase-merge directory`, naming a path inside attic's private store. A snapshot hook driving that loop discards one side of a conflict silently, once per run.
 
@@ -44,7 +69,7 @@ To find one you have not opened lately, `attic doctor` reports it across every o
 
 ```
 STATUS  FP            LABEL                      DETAIL
-wedged  c7ba88d2b618  ravinald/netbox-flow-view  stopped mid-rebase — resolve in /Users/you/git/netbox-flow-view with `attic exec rebase --abort`
+wedged  c7ba88d2b618  ravinald/netbox-flow-view  stopped mid-rebase with 3 commit(s) on no other ref — resolve in /Users/you/git/netbox-flow-view, `--quit` to keep them
 ```
 
 doctor never resolves one under `--fix`: choosing between `--continue` and `--abort` decides which side of a conflict survives.
