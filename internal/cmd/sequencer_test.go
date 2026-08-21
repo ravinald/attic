@@ -43,6 +43,12 @@ func TestSequencerDetectsStoppedRebase(t *testing.T) {
 	if seq.Abort != "rebase --abort" {
 		t.Errorf("Abort = %q, want \"rebase --abort\"", seq.Abort)
 	}
+	// The hook committed once over the conflict and that commit is on no ref, so --abort would
+	// destroy it. The commits the rebase had already replayed are reachable from the branch and
+	// must not be counted, which is what counting against REBASE_HEAD got wrong.
+	if seq.Orphaned != 1 {
+		t.Errorf("Orphaned = %d, want 1", seq.Orphaned)
+	}
 
 	// The exact shape of the loop: the conflict is staged, so porcelain is silent while the
 	// sequencer state is still open.
@@ -180,6 +186,23 @@ func TestPassthroughGatesOnlyIntegrators(t *testing.T) {
 			t.Errorf("passthrough %q missing", use)
 		} else if got != want {
 			t.Errorf("passthrough %q integrates = %v, want %v", use, got, want)
+		}
+	}
+}
+
+// TestSequencerErrLeadsWithQuitWhenCommitsAreOrphaned covers the correction that cost the most to
+// learn: `--abort` resets to the commit the operation stopped on, so on an overlay a snapshot hook
+// kept committing over it discards every one of those commits. --quit closes the state and keeps them.
+func TestSequencerErrLeadsWithQuitWhenCommitsAreOrphaned(t *testing.T) {
+	fresh := gitwrap.Sequencer{Op: "rebase", Abort: "rebase --abort"}.Err("sync").Error()
+	if strings.Contains(fresh, "--quit") {
+		t.Errorf("fresh wedge mentions --quit, which only matters with commits stacked:\n%s", fresh)
+	}
+
+	stacked := gitwrap.Sequencer{Op: "rebase", Abort: "rebase --abort", Orphaned: 9}.Err("sync").Error()
+	for _, want := range []string{"9 commit(s)", "would destroy", "attic exec rebase --quit", "HEAD is left detached"} {
+		if !strings.Contains(stacked, want) {
+			t.Errorf("stacked wedge message missing %q:\n%s", want, stacked)
 		}
 	}
 }
