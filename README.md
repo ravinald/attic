@@ -2,8 +2,9 @@
 
 Track files alongside a git repo without committing them to it.
 
+[![Release](https://img.shields.io/github/v/release/ravinald/attic?label=release)](https://github.com/ravinald/attic/releases/latest)
+[![Status](https://img.shields.io/badge/status-alpha-orange.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-Status: **alpha**. Newest tag is `v0.1.0`; `main` carries everything on this page. See [CHANGELOG.md](CHANGELOG.md).
 
 `attic` keeps a per-host-repo _bare_ git overlay whose git directory sits outside the host work tree. Overlay files stay in the repo where you actually use them, their history lives elsewhere on its own remote, and a marker block in the host's `.gitignore` stops them ever leaking upstream.
 
@@ -50,10 +51,8 @@ Identity is the host repo's root commit SHA, stable across machines and clones. 
 ## Install
 
 ```sh
-go install github.com/ravinald/attic/cmd/attic@main
+go install github.com/ravinald/attic/cmd/attic@latest   # or @v0.2.0 to pin
 ```
-
-`@latest` resolves to `v0.1.0`, which predates most of this page — no `status`, `sync`, `config`, `eject`, `list`, `label`, `labels`, `doctor`, `stage` or `rekey`. Track `main` until the next tag lands.
 
 Or from a checkout:
 
