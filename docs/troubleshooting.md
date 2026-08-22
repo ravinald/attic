@@ -10,20 +10,20 @@ Identity is the root commit SHA. A repo with zero commits has no root. Make a fi
 
 ## `attic add` says "path X is outside host repo Y"
 
-Most likely a symlink mismatch: macOS's `/var` is a symlink to `/private/var`, so `mktemp` paths and `git rev-parse --show-toplevel` can disagree on the canonical form. `attic` resolves both sides via `EvalSymlinks`, so this should be fixed — if you still see it, the path you're adding is genuinely outside the host repo (e.g. you typed `../other/file`).
+Most likely a symlink mismatch: macOS's `/var` is a symlink to `/private/var`, so `mktemp` paths and `git rev-parse --show-toplevel` can disagree on the canonical form. `attic` resolves both sides via `EvalSymlinks`, so this should be fixed. If you still see it, the path you're adding is genuinely outside the host repo (you typed `../other/file`, say).
 
-## `attic clone --mono` says "no overlay branch repo/<fp>"
+## `attic clone --mono` says "no overlay branch `repo/<fp>`"
 
 The host repo on this machine has a fingerprint that doesn't exist on the mono remote. Causes:
 
-- Overlay was never pushed from any other machine yet — run `attic init --mono-remote <url>` here instead.
-- The host repo has been rebased to rewrite its root commit, so the fingerprint changed. List branches on the remote (`git ls-remote <url> 'repo/*'`) and either rename one or start fresh.
+- The overlay was never pushed from any other machine yet. Run `attic init --mono-remote <url>` here instead.
+- The host repo's root commit was rewritten, so the fingerprint changed. If the overlay still exists locally under the old fingerprint, `attic rekey` re-points it (see below). If it only exists on the remote, list the branches (`git ls-remote <url> 'repo/*'`), then `attic init --mono-remote <url>` here and fetch the old branch by name.
 
 ## `attic pull`/`sync` says the overlay is mid-rebase
 
 A previous `attic sync` rebase stopped on a conflict and nobody finished it. Every write command refuses until you do:
 
-```
+```text
 attic: sync: overlay is mid-rebase, so this would write over an unresolved conflict.
 Finish it with `attic exec rebase --continue`, or discard it with `attic exec rebase --abort`
 ```
@@ -35,7 +35,7 @@ attic exec status   # which paths conflict
 attic exec diff     # the conflict itself
 ```
 
-**Check for commits on no other ref before choosing how to unwind it.** `--abort` resets the branch to where the rebase started, so it destroys anything committed since — and a snapshot hook driving the loop above commits once per run. The refusal counts them for you; `attic doctor` reports the same count. With none, `--abort` is the simple answer:
+**Check for commits on no other ref before choosing how to unwind it.** `--abort` resets the branch to where the rebase started, so it destroys anything committed since, and a snapshot hook driving the loop above commits once per run. The refusal counts them for you; `attic doctor` reports the same count. With none, `--abort` is the simple answer:
 
 ```bash
 attic exec rebase --abort
@@ -44,7 +44,7 @@ attic exec rebase --abort
 With any, use `--quit`, which closes the operation and leaves the branch tip alone. It leaves HEAD detached, so re-point the branch yourself:
 
 ```bash
-fp=$(attic where | grep -o '[0-9a-f]\{12\}' | head -1)
+fp=$(attic where --fp)
 attic exec rebase --quit
 attic exec branch -f "repo/$fp" HEAD
 attic exec symbolic-ref HEAD "refs/heads/repo/$fp"
@@ -61,13 +61,13 @@ attic exec -c core.editor=true rebase --continue
 attic sync
 ```
 
-Two overlay files conflict most often: a dated changelog two machines both appended to, and a `.jsonl` ledger both appended to. Both are append-only by intent, so a hand-merged union beats letting either side win — keep every section from both, remote's first. Expect the conflicted file to contain nested conflict markers if the loop above ran, since it commits them; take the union from the two clean sides (`attic exec show :2:<path>` and `:3:<path>`) rather than untangling them.
+Two overlay files conflict most often: a dated changelog two machines both appended to, and a `.jsonl` ledger both appended to. Both are append-only by intent, so a hand-merged union beats letting either side win: keep every section from both, remote's first. Expect the conflicted file to contain nested conflict markers if the loop above ran, since it commits them; take the union from the two clean sides (`attic exec show :2:<path>` and `:3:<path>`) rather than untangling them.
 
-The refusals exist because the recovery is not obvious from git's own message. Before them, `attic stage` would mark the conflicted path resolved with whatever was in the work tree and `attic commit` would bake that in, leaving a clean index over an open rebase — git then reported "nothing to commit, working tree clean" while every `sync` died on `fatal: It seems that there is already a rebase-merge directory`, naming a path inside attic's private store. A snapshot hook driving that loop discards one side of a conflict silently, once per run.
+The refusals exist because the recovery is not obvious from git's own message. Before them, `attic stage` would mark the conflicted path resolved with whatever was in the work tree and `attic commit` would bake that in, leaving a clean index over an open rebase. git then reported "nothing to commit, working tree clean" while every `sync` died on `fatal: It seems that there is already a rebase-merge directory`, naming a path inside attic's private store. A snapshot hook driving that loop discards one side of a conflict silently, once per run.
 
 To find one you have not opened lately, `attic doctor` reports it across every overlay on the machine and exits non-zero:
 
-```
+```text
 STATUS  FP            LABEL                      DETAIL
 wedged  c7ba88d2b618  ravinald/netbox-flow-view  stopped mid-rebase with 3 commit(s) on no other ref — resolve in /Users/you/git/netbox-flow-view, `--quit` to keep them
 ```
@@ -91,21 +91,21 @@ Registering a file beneath an already-registered directory is the one case worth
 
 ## An overlay path keeps showing up staged in the host repo
 
-A `.gitignore` rule can't untrack a path already in the host index or stop a `git add -f`, so once an overlay path lands in the host index (a stray force-add, a headless script, a pre-`attic` commit) it sticks and every commit trips the guard. Run `attic eject` from the host repo — it evicts every managed path from the host index while leaving the working-tree files and overlay history untouched. `attic eject --check` reports without changing anything; wire it into a pre-commit hook to catch the regression early.
+A `.gitignore` rule can't untrack a path already in the host index or stop a `git add -f`, so once an overlay path lands in the host index (a stray force-add, a headless script, a pre-`attic` commit) it sticks and every commit trips the guard. Run `attic eject` from the host repo: it evicts every managed path from the host index while leaving the working-tree files and overlay history untouched. `attic eject --check` reports without changing anything; wire it into a pre-commit hook to catch the regression early.
 
 ## I committed an overlay path to the host repo by accident
 
-Remove it from the host upstream (`git rm --cached path && git commit && git push`), then `attic eject` to keep the index clean going forward. The marker block in `.gitignore` plus `attic add`'s host-index eviction exist precisely to prevent this — check the block is intact and contains the path.
+Remove it from the host upstream (`git rm --cached path && git commit && git push`), then `attic eject` to keep the index clean going forward. The marker block in `.gitignore` plus `attic add`'s host-index eviction exist to prevent this, so check the block is intact and contains the path.
 
 ## `attic status` says clean, but I know I added a file
 
-The host `.gitignore` hides overlay-owned paths from git and outranks the overlay's own `info/exclude`, so git will never volunteer a _new_ file under `notes/` — not in `git status`, not with `-uall`. `attic status` asks for those by name and prints them under **"Untracked overlay files"** below git's own output. If that section lists your file, it exists but was never staged: `attic stage`. Use `attic stage`, not `attic add` — the file sits under a directory the block already registers, and `add` would append a redundant rule naming it.
+The host `.gitignore` hides overlay-owned paths from git and outranks the overlay's own `info/exclude`, so git will never volunteer a _new_ file under `notes/`, not in `git status` and not with `-uall`. `attic status` asks for those by name and prints them under **"Untracked overlay files"** below git's own output. If that section lists your file, it exists but was never staged. Use `attic stage`, not `attic add`: the file sits under a directory the block already registers, and `add` would append a redundant rule naming it.
 
 If you piped the command (`--porcelain`, `-s`, `-z`), the header is dropped but the files still arrive, as `?? <path>` on git's own stream (`? <path>` under `--porcelain=v2`, NUL-terminated under `-z`). So `attic status --porcelain | wc -l` is a usable dirtiness check. Pass `--ignored` and attic stays quiet, because git's `!!` lines already cover the same files.
 
 ## `attic commit` says "nothing staged for commit"
 
-Edits to already-tracked overlay files aren't staged automatically. Use `attic commit -a`. New files need staging first — `attic stage` for anything under a path the overlay already manages, `attic add <path>` only to register a path the block doesn't cover yet. The error lists any it can see.
+Edits to already-tracked overlay files aren't staged automatically. Use `attic commit -a`. New files need staging first: `attic stage` for anything under a path the overlay already manages, `attic add <path>` only to register a path the block doesn't cover yet. The error lists any it can see.
 
 ## Every attic command says "no overlay for &lt;path&gt;" but the overlay existed yesterday
 
@@ -113,28 +113,28 @@ You rewrote the host repo's history. attic keys overlay storage by the host's ro
 
 Run **`attic rekey`** inside the host repo. It names both fingerprints, moves the storage dir, renames the `repo/<fp>` branch, rewrites the branch config and fetch refspec, and updates `meta.toml`. `--dry-run` prints the plan first. Then `attic push` to publish the new branch; the old one stays on the mono remote as a fallback.
 
-Do **not** run `attic init` here. It would start an empty overlay beside the full one and leave the real history unreachable. The error says so, and refuses to offer init when it can see orphaned storage.
+Do **not** run `attic init` here. It would start an empty overlay beside the populated one and leave that history unreachable. The error says so, and refuses to offer init when it can see orphaned storage.
 
 `attic doctor` reports orphans across every overlay on the machine, which is how you find one in a repo you haven't opened lately.
 
 Two things to know before rewriting a host repo's history, because both bite after the fact rather than during:
 
-- A `git reset --hard` onto the rewritten history **deletes every overlay file the host index also tracked**, since those paths are in the old index and absent from the new HEAD. Untracked overlay files survive. Recover with `attic rekey`, then `git --git-dir=$(attic where --fp | xargs -I{} echo ~/.local/share/attic/repos/{}/attic.git) --work-tree=. checkout -- <path>`.
+- A `git reset --hard` onto the rewritten history **deletes every overlay file the host index also tracked**, since those paths are in the old index and absent from the new HEAD. Untracked overlay files survive. Recover with `attic rekey`, then `attic exec -- checkout -- <path>`.
 - If a snapshot hook runs while the overlay is orphaned it fails silently and records nothing, so a change made in that window is only on disk. Commit it after re-keying.
 
 ## `attic labels push` didn't rename my overlay
 
-`push` is **contribute-only**: it fills in fingerprints the shared map has never seen and never overwrites an existing entry. That's deliberate — it's what stops one machine's push clobbering a name someone curated. To rename an existing entry, use `attic labels edit`, the only writer allowed to overwrite.
+`push` is **contribute-only**: it fills in fingerprints the shared map has never seen and never overwrites an existing entry. That's deliberate: it's what stops one machine's push clobbering a name someone curated. To rename an existing entry, use `attic labels edit`, the only writer allowed to overwrite.
 
 If the name is only wrong on _this_ machine, you want a local override instead: `attic label set <name>` (never pushed).
 
 ## `attic doctor` reports an overlay as `overridden` and won't fix it
 
-The overlay has a local override in `~/.config/attic/overrides.toml`, and doctor honours your local choice over the origin slug. To hand it back to doctor's auto reconciliation, clear the override with `attic label reset` (it lists what it would clear unless you pass `--force`).
+The overlay has a local override in `~/.config/attic/overrides.toml`, and doctor honors your local choice over the origin slug. To hand it back to doctor's auto reconciliation, clear the override with `attic label reset` (it lists what it would clear unless you pass `--force`).
 
 ## `attic labels` says "this machine has more than one mono remote"
 
-The `labels` commands resolve the remote from the current overlay, then fall back to the machine's sole mono remote. With two or more, that fallback is ambiguous — name it: `attic labels push --remote git@github.com:you/attic-overlays.git`. Or run the command from inside a host repo whose overlay already points at the remote you mean.
+The `labels` commands resolve the remote from the current overlay, then fall back to the machine's sole mono remote. With two or more, that fallback is ambiguous, so name it: `attic labels push --remote git@github.com:you/attic-overlays.git`. Or run the command from inside a host repo whose overlay already points at the remote you mean.
 
 ## `attic add` warns that a `.gitignore` rule is now redundant
 
@@ -145,7 +145,7 @@ attic config set gitignore.on_duplicate manage    # this repo
 attic add notes/                                  # deletes the redundant outside rule
 ```
 
-`manage` only touches slash-equivalent, glob-free rules — a real pattern like `docs-*` is never second-guessed, and lines inside another tool's markers are left alone. Silence the notice without changing anything with `off`.
+`manage` only touches slash-equivalent, glob-free rules: a real pattern like `docs-*` is never second-guessed, and lines inside another tool's markers are left alone. Silence the notice without changing anything with `off`.
 
 ## I want to remove an overlay entirely
 
@@ -153,28 +153,12 @@ attic add notes/                                  # deletes the redundant outsid
 attic deinit          # from inside the host repo
 ```
 
-This deletes the bare overlay and its meta, and strips attic's block from the host `.gitignore`. Work-tree files stay on disk — `deinit` forgets how to track them, it doesn't delete them. It refuses when the overlay holds commits not on its remote; `attic push` first, or `--force` if you mean to drop them.
+This deletes the bare overlay and its meta, and strips attic's block from the host `.gitignore`. Work-tree files stay on disk: `deinit` forgets how to track them, it doesn't delete them. It refuses when the overlay holds commits not on its remote; `attic push` first, or `--force` if you mean to drop them.
 
 The remote side is untouched. For a mono remote, delete the branch yourself:
 
 ```sh
-attic exec -- push origin --delete repo/$(attic where --fp)   # BEFORE deinit — needs the overlay
-```
-
-## My fingerprint changed because I rebased the root commit
-
-Move the storage dir:
-
-```sh
-mv ~/.local/share/attic/repos/<old-fp>/ ~/.local/share/attic/repos/<new-fp>/
-# edit meta.toml to update fingerprint and (for mono) branch name
-```
-
-For mono mode, also rename the branch on the remote:
-
-```sh
-attic exec -- push origin <old-branch>:repo/<new-fp>
-attic exec -- push origin --delete <old-branch>
+attic exec -- push origin --delete repo/$(attic where --fp)   # BEFORE deinit: needs the overlay
 ```
 
 ## I want to use a different default branch name (not "main")
