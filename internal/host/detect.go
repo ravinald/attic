@@ -78,6 +78,30 @@ func ParseOwnerRepo(url string) (string, bool) {
 	return path, ok
 }
 
+// CanonicalRemote reduces a git remote URL to a comparison key: transport, host, and owner/repo path,
+// with a trailing slash and a ".git" suffix removed. Two URLs sharing a key address the same repo over
+// the same wire protocol, so either spelling authenticates identically and the pair is one remote.
+//
+// The transport stays in the key on purpose. "git@github.com:o/r.git" and "https://github.com/o/r"
+// name one repo but are not interchangeable: a machine may hold credentials for one and not the other,
+// so collapsing them would hand a caller a URL that cannot authenticate.
+func CanonicalRemote(raw string) (string, bool) {
+	h, path, ok := splitRemote(raw)
+	if !ok {
+		return "", false
+	}
+	return remoteTransport(raw) + "://" + strings.ToLower(h) + "/" + path, true
+}
+
+// remoteTransport names the wire protocol a remote URL selects. An scp-style address (git@host:path)
+// carries no scheme and always means ssh.
+func remoteTransport(raw string) string {
+	if scheme, _, found := strings.Cut(strings.TrimSpace(raw), "://"); found {
+		return strings.ToLower(scheme)
+	}
+	return "ssh"
+}
+
 // WebBase converts a git remote URL to its https browse root ("https://host/owner/repo"). It returns
 // ok=false when the URL can't be parsed. Used to build clickable links for the mono-remote map.
 func WebBase(url string) (string, bool) {

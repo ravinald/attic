@@ -208,6 +208,40 @@ func ejectFromHost(hr host.Repo, rels []string) error {
 	return nil
 }
 
+// hostTrackedPaths returns the subset of rels the HOST repo carries in its index. A path the host
+// tracks has an owner upstream, so an overlay restore must not write over it: the wedge this guards
+// against replaced a committed README.md with one checked out of a mono remote's label branch.
+func hostTrackedPaths(hr host.Repo, rels []string) ([]string, error) {
+	if len(rels) == 0 {
+		return nil, nil
+	}
+	args := append([]string{"ls-files", "-z", "--"}, rels...)
+	out, err := hostGit(hr.Root, args...)
+	if err != nil {
+		return nil, fmt.Errorf("host tracked paths: %w", err)
+	}
+	var tracked []string
+	for f := range strings.SplitSeq(out, "\x00") {
+		if f != "" {
+			tracked = append(tracked, f)
+		}
+	}
+	sort.Strings(tracked)
+	return tracked, nil
+}
+
+// narrowMonoFetch scopes the refspec before a command that talks to the remote. An overlay wired
+// before the refspec was scoped still carries git's `+refs/heads/*:refs/remotes/origin/*`, so one
+// fetch pulls every project on the mono remote — measured at 48M against 496K for a scoped sibling.
+// A detached or unborn HEAD names no branch to scope; git itself reports that when it matters.
+func narrowMonoFetch(repo gitwrap.Repo) error {
+	branch, err := repo.Run("symbolic-ref", "--short", "HEAD")
+	if err != nil {
+		return nil
+	}
+	return ensureMonoFetch(repo, strings.TrimSpace(branch))
+}
+
 // topLevels reduces repo-relative paths to their unique first path segments — the
 // granularity attic records in the .gitignore block and evicts from the host index.
 func topLevels(paths []string) []string {

@@ -9,13 +9,18 @@ import "github.com/spf13/cobra"
 // pull would start a second integration on top of the stopped one, and push would publish whatever
 // resolution the stopped one left behind. fetch, log and diff read, so they stay available for
 // working out what went wrong.
+//
+// narrowsFetch marks the two that download refs, and so must scope a mono overlay's refspec first.
+// sync and rekey already do; without it here, `attic fetch` on an overlay wired before the refspec
+// was scoped still pulls every other project's history into this one's bare.
 var passthroughs = []struct {
-	use, short string
-	integrates bool
+	use, short   string
+	integrates   bool
+	narrowsFetch bool
 }{
 	{use: "push", short: "Push overlay commits (git push).", integrates: true},
-	{use: "pull", short: "Pull overlay commits (git pull).", integrates: true},
-	{use: "fetch", short: "Fetch overlay refs (git fetch)."},
+	{use: "pull", short: "Pull overlay commits (git pull).", integrates: true, narrowsFetch: true},
+	{use: "fetch", short: "Fetch overlay refs (git fetch).", narrowsFetch: true},
 	{use: "log", short: "Show overlay history (git log)."},
 	{use: "diff", short: "Show overlay diff (git diff)."},
 }
@@ -33,6 +38,11 @@ func init() {
 				}
 				if p.integrates {
 					if err := ensureNoSequencer(repo, p.use); err != nil {
+						return err
+					}
+				}
+				if p.narrowsFetch {
+					if err := narrowMonoFetch(repo); err != nil {
 						return err
 					}
 				}

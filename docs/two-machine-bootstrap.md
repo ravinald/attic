@@ -5,7 +5,7 @@ You want to adopt `attic` on a repo you've been working in for a while. The host
 ## What not to do
 
 - **`attic init` on both machines and then push from each.** Same `repo/<fp>` branch, two unrelated histories: the second push gets rejected, and you have to merge with `--allow-unrelated-histories` anyway. Plan for the merge from the start.
-- **`attic clone --mono` on the second machine without moving its local copy aside first.** Clone refuses to clobber existing files, and `--force` overwrites home's edits and loses work. Don't.
+- **`attic clone --mono` on the second machine without moving its local copy aside first.** Clone refuses to clobber existing files, and `--force` overwrites home's edits and loses work. Don't. (`--force` stops at paths the host repo tracks, but the copy at issue here is untracked by construction, so that guard does not cover you.)
 - **Skipping the fingerprint check.** Both machines must agree on the host repo's root commit. If they don't, you've got a different problem to fix first (a rewritten root, a fork). See [troubleshooting.md](troubleshooting.md).
 
 ```sh

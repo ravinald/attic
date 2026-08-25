@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -316,30 +317,56 @@ func resolveMonoRemote() (string, error) {
 
 // soleMonoRemote returns the one mono remote this machine's overlays point at. It errors when there
 // are none (nothing to act on) or more than one (ambiguous) — the caller then wants an explicit URL.
+//
+// Overlays record the URL as it was typed, so one remote arrives spelled several ways: a trailing
+// slash, a ".git" suffix, neither. Grouping on host.CanonicalRemote keeps those one remote, which is
+// what stops a machine syncing nine overlays to the same place from reporting three of them.
 func soleMonoRemote() (string, error) {
 	metas, err := store.EnumerateMetas()
 	if err != nil {
 		return "", err
 	}
-	seen := map[string]struct{}{}
-	var remotes []string
+	spellings := map[string]map[string]int{} // canonical key -> URL as recorded -> overlays using it
 	for _, m := range metas {
-		if m.Mono && m.Remote != "" {
-			if _, ok := seen[m.Remote]; !ok {
-				seen[m.Remote] = struct{}{}
-				remotes = append(remotes, m.Remote)
-			}
+		if !m.Mono || m.Remote == "" {
+			continue
 		}
+		key, ok := host.CanonicalRemote(m.Remote)
+		if !ok {
+			// Unparseable: compare it literally rather than fold it into some other remote's group.
+			key = m.Remote
+		}
+		if spellings[key] == nil {
+			spellings[key] = map[string]int{}
+		}
+		spellings[key][m.Remote]++
 	}
-	sort.Strings(remotes)
-	switch len(remotes) {
+	keys := slices.Sorted(maps.Keys(spellings))
+	switch len(keys) {
 	case 0:
 		return "", errors.New("no mono-remote overlays on this machine — pass the remote URL explicitly, or run `attic init --mono-remote <url>` first")
 	case 1:
-		return remotes[0], nil
+		return dominantSpelling(spellings[keys[0]]), nil
 	default:
-		return "", fmt.Errorf("this machine has more than one mono remote — pass the remote URL explicitly:\n  %s", strings.Join(remotes, "\n  "))
+		reps := make([]string, 0, len(keys))
+		for _, k := range keys {
+			reps = append(reps, dominantSpelling(spellings[k]))
+		}
+		return "", fmt.Errorf("this machine has more than one mono remote — pass the remote URL explicitly:\n  %s", strings.Join(reps, "\n  "))
 	}
+}
+
+// dominantSpelling picks which recorded form of one remote to hand git: the most used, then the
+// lexicographically smallest so repeated runs agree. Frequency decides it because the spelling most
+// overlays already sync through is the one whose credentials are known to work on this machine.
+func dominantSpelling(uses map[string]int) string {
+	best, bestN := "", -1
+	for s, n := range uses {
+		if n > bestN || (n == bestN && s < best) {
+			best, bestN = s, n
+		}
+	}
+	return best
 }
 
 // collectLocalLabels returns every local overlay sharing the given mono remote, keyed by fingerprint.

@@ -19,6 +19,41 @@ The host repo on this machine has a fingerprint that doesn't exist on the mono r
 - The overlay was never pushed from any other machine yet. Run `attic init --mono-remote <url>` here instead.
 - The host repo's root commit was rewritten, so the fingerprint changed. If the overlay still exists locally under the old fingerprint, `attic rekey` re-points it (see below). If it only exists on the remote, list the branches (`git ls-remote <url> 'repo/*'`), then `attic init --mono-remote <url>` here and fetch the old branch by name.
 
+## `attic clone` says the remote "is a shared mono remote"
+
+You passed a mono remote without `--mono`. Add the flag:
+
+```sh
+attic clone --mono https://github.com/you/attic-overlays/
+```
+
+Without it, clone takes the per-host-repo path and clones the whole bare, which is wrong in three ways at once: it downloads every project's overlay history, it lands on the remote's default branch (`_attic/labels`, not this repo's `repo/<fp>`), and it then checks that branch's `README.md` and `labels.toml` out into your host work tree. attic probes the remote for `repo/*` and `_attic/labels` refs before touching disk and refuses rather than guessing the mode, because `--mono` decides where files land and a typo'd URL must not silently change modes.
+
+A clone that refuses leaves no overlay behind, so fix the flag and run it again. If you hit this on a version before the guard existed, the leftovers are a bare under `~/.local/share/attic/repos/<fp>/attic.git` with no `meta.toml` and HEAD on `_attic/labels`, plus `README.md` and `labels.toml` written into the host repo. `attic where` reports `(no overlay initialised)` while the bare exists, which is the signature. Recover by restoring the host file (`git checkout -- README.md`), deleting the stray `labels.toml`, removing that storage directory, and cloning again with `--mono`.
+
+## `attic clone --force` says paths "are tracked by the host repo"
+
+`--force` overwrites **untracked** files. A colliding path the host repo tracks already has an owner, and restoring an overlay over it destroys committed content, so no flag reaches those. The flag exists to reclaim stray untracked copies of overlay files, which is the collision a second machine produces.
+
+If the path belongs to the overlay and the host repo tracks it by mistake, hand it over first with `git rm --cached <path>` plus a host commit, then clone.
+
+## An overlay's bare is far larger than the files in it
+
+A mono overlay should hold one branch. Check the refspec:
+
+```sh
+attic exec config --get remote.origin.fetch     # want: +refs/heads/repo/<fp>:refs/remotes/origin/repo/<fp>
+attic exec for-each-ref refs/remotes/ | wc -l   # want: 1
+du -sh "$(attic where | awk '/^bare:/ {print $2}')"
+```
+
+A wildcard (`+refs/heads/*:refs/remotes/origin/*`) means one fetch pulls every project on the remote into this overlay's bare. Measured on one machine: 48M against 496K for a correctly scoped sibling. `attic clone --mono` scopes the refspec, and `sync`, `fetch`, `pull` and `rekey` narrow it back if they find it widened, so running any of those on a current binary heals it. To reclaim the space already fetched:
+
+```sh
+attic exec remote prune origin
+attic exec gc --prune=now
+```
+
 ## `attic pull`/`sync` says the overlay is mid-rebase
 
 A previous `attic sync` rebase stopped on a conflict and nobody finished it. Every write command refuses until you do:
@@ -134,7 +169,9 @@ The overlay has a local override in `~/.config/attic/overrides.toml`, and doctor
 
 ## `attic labels` says "this machine has more than one mono remote"
 
-The `labels` commands resolve the remote from the current overlay, then fall back to the machine's sole mono remote. With two or more, that fallback is ambiguous, so name it: `attic labels push --remote git@github.com:you/attic-overlays.git`. Or run the command from inside a host repo whose overlay already points at the remote you mean.
+The `labels` commands resolve the remote from the current overlay, then fall back to the machine's sole mono remote. With two or more, that fallback is ambiguous, so name it: `attic labels push --remote git@github.com:you/attic-overlays.git`. Or run the command from inside a host repo whose overlay already points at the remote you mean. `attic clone --mono` with no URL uses the same fallback and reports the same thing.
+
+Spelling is not ambiguity. Overlays record the URL as it was typed, so one remote accumulates several forms (`…/attic-overlays`, `…/attic-overlays/`, `…/attic-overlays.git`); those count as one remote, and the form most overlays already use is the one attic hands git. Transport is a real difference: `git@github.com:you/attic-overlays.git` and `https://github.com/you/attic-overlays` name one repo but authenticate differently, so a machine holding both has two mono remotes and naming one is the answer.
 
 ## `attic add` warns that a `.gitignore` rule is now redundant
 
