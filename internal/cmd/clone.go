@@ -26,7 +26,7 @@ var cloneCmd = &cobra.Command{
 For a per-host-repo remote (default): clones the whole bare from <remote>.
 For a shared mono remote (--mono): clones only the repo/<fp> branch from <remote>, where <fp> is the host repo's fingerprint. With --mono the remote may be omitted when this machine already has exactly one mono remote.
 
-Refuses to clobber existing files unless --force.`,
+Refuses to clobber existing files unless --force, and refuses paths the host repo tracks either way.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
 		var remote string
@@ -54,9 +54,32 @@ Refuses to clobber existing files unless --force.`,
 		if _, err := os.Stat(bare); err == nil {
 			return fmt.Errorf("clone: overlay already exists at %s — remove it or use the existing one", bare)
 		}
+		// A mono remote carries one orphan branch per fingerprint plus the label map, and its HEAD points
+		// at none of this repo's files. Cloning it whole drags every project's history in and checks the
+		// label branch out over the host work tree, so name the flag rather than guess the mode.
+		if !cloneFlags.mono {
+			mono, err := remoteLooksMono(remote)
+			if err != nil {
+				return err
+			}
+			if mono {
+				return fmt.Errorf("clone: %s is a shared mono remote — pass --mono to take branch %s from it",
+					remote, overlayBranch(fp))
+			}
+		}
 		if err := os.MkdirAll(filepath.Dir(bare), 0o755); err != nil {
 			return fmt.Errorf("clone: mkdir parent: %w", err)
 		}
+		// Anything that fails from here leaves a bare nothing has finished provisioning, and the next
+		// attempt then dies on "overlay already exists" instead of the real error. Roll it back so one
+		// wrong flag stays one wrong flag. The early return above means this never touches an existing
+		// overlay, and meta is written last, so a rolled-back clone leaves no record either.
+		provisioned := false
+		defer func() {
+			if !provisioned {
+				_ = os.RemoveAll(bare)
+			}
+		}()
 
 		branch := "main"
 		if cloneFlags.mono {
@@ -108,15 +131,23 @@ Refuses to clobber existing files unless --force.`,
 		if err != nil {
 			return err
 		}
-		paths := strings.Split(strings.TrimSpace(out), "\n")
+		paths := splitLines(out)
 		var collisions []string
 		for _, p := range paths {
-			if p == "" {
-				continue
-			}
 			if _, err := os.Stat(filepath.Join(hr.Root, p)); err == nil {
 				collisions = append(collisions, p)
 			}
+		}
+		// A colliding path the host repo tracks already has an owner, and restoring an overlay over it
+		// destroys committed content. --force deliberately does not reach these: it exists to reclaim
+		// stray copies of overlay files, not to overwrite host history.
+		tracked, err := hostTrackedPaths(hr, collisions)
+		if err != nil {
+			return err
+		}
+		if len(tracked) > 0 {
+			return fmt.Errorf("clone: %d colliding path(s) are tracked by the host repo, which owns them "+
+				"— --force does not cover these:\n  %s", len(tracked), strings.Join(tracked, "\n  "))
 		}
 		if len(collisions) > 0 && !cloneFlags.force {
 			return fmt.Errorf("clone: %d existing file(s) would be overwritten — pass --force to proceed:\n  %s",
@@ -160,6 +191,7 @@ Refuses to clobber existing files unless --force.`,
 		if err := store.SaveMeta(m); err != nil {
 			return err
 		}
+		provisioned = true
 		modeNote := ""
 		if cloneFlags.mono {
 			modeNote = " (mono)"
@@ -170,8 +202,24 @@ Refuses to clobber existing files unless --force.`,
 	},
 }
 
+// monoRefPatterns match refs only a shared mono remote carries: one orphan branch per overlay
+// fingerprint, plus the label map.
+var monoRefPatterns = []string{overlayBranchPrefix + "*", labelsBranch}
+
+// remoteLooksMono reports whether a remote carries mono-overlay refs. One ls-remote ahead of the
+// clone costs a round-trip the --mono path already pays, and saves unpicking a bare cloned in the
+// wrong mode: every other project's history, and the label branch checked out over the host repo.
+func remoteLooksMono(remote string) (bool, error) {
+	args := append([]string{"ls-remote", "--heads", remote}, monoRefPatterns...)
+	out, err := (gitwrap.Repo{}).Run(args...)
+	if err != nil {
+		return false, fmt.Errorf("clone: ls-remote %s: %w", remote, err)
+	}
+	return strings.TrimSpace(out) != "", nil
+}
+
 func init() {
-	cloneCmd.Flags().BoolVar(&cloneFlags.force, "force", false, "Overwrite existing files in the work tree.")
+	cloneCmd.Flags().BoolVar(&cloneFlags.force, "force", false, "Overwrite untracked files in the work tree (never paths the host repo tracks).")
 	cloneCmd.Flags().BoolVar(&cloneFlags.mono, "mono", false, "Treat <remote> as a shared mono repo and clone only branch repo/<fp>.")
 	root.AddCommand(cloneCmd)
 }

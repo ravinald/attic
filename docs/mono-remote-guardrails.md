@@ -36,5 +36,7 @@ Only the **Layer 1 Action** distinguishes them: it keys on the `pull_request` ev
 ## Layer 2: shrink the surface
 
 - **Default branch = `_attic/labels`.** The first `attic init --mono-remote` against a fresh repo seeds that branch and points the repo default at it via `gh` (best-effort: if `gh` is absent, init prints the setting to apply by hand). GitHub's _Compare & pull request_ banner targets the default branch, so this aims it at the label map, which no overlay branch shares an ancestor with. It doubles as the landing page: `attic labels push` writes a `README.md` there mapping each label to its `repo/<fp>` branch.
+  Pointing the default there has one cost, paid on the client: `git clone --bare <remote>` follows the remote's HEAD, so `attic clone` without `--mono` used to land on the label branch and check its `README.md` out over the host repo's own. attic now probes for `repo/*` and `_attic/labels` refs before cloning and refuses a mono remote without the flag, and `--force` no longer reaches a path the host repo tracks. Both are client-side, so a machine on an older binary still has the sharp edge: see [troubleshooting](troubleshooting.md#attic-clone-says-the-remote-is-a-shared-mono-remote) for the signature and the recovery.
+
 - **Disable Issues, Wikis, Projects, Discussions** in repo settings.
 - Turn off squash and rebase merges (GitHub forces at least one method on), leaving only merge commits and so fewer buttons to misclick.

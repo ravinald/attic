@@ -55,6 +55,14 @@ Pro: one repo to bootstrap, one URL to remember. Branch names are SHAs so no pro
 
 In mono mode, `init` configures `push.default = current` and `push.autoSetupRemote = true` so plain `attic push` always routes to the matching branch and creates it on first push.
 
+#### Mode detection
+
+The two modes are not interchangeable, and the wrong one is destructive rather than merely wrong: a per-host-repo `clone` of a mono remote takes the whole bare, follows the remote HEAD to `_attic/labels`, and checks that branch's files out over the host work tree. So `clone` probes first, with one `ls-remote --heads <remote> 'repo/*' '_attic/labels'`, and refuses a remote carrying either ref unless `--mono` is passed.
+
+It refuses rather than switching modes on its own. `--mono` decides where files land and what `meta.toml` records, so inferring it would let a mistyped URL change modes without saying so; naming the flag in the error costs one retry and teaches the distinction. The probe is a round-trip the `--mono` path already pays for its branch pre-flight, so the common case is no slower.
+
+Two more properties keep a wrong invocation cheap to undo. A clone that fails anywhere after creating the bare removes it, because a half-provisioned bare makes the _next_ attempt fail with `overlay already exists` and hides the original error. And `--force` covers untracked collisions only: a colliding path the host repo tracks has an owner upstream, so restoring an overlay over it would destroy committed content.
+
 #### Fetch scope
 
 Each `repo/<fp>` branch is an independent orphan history, so an overlay has no reason to hold any branch but its own. `init` and `clone` therefore pin the fetch refspec to a single branch:
@@ -65,7 +73,7 @@ remote.origin.fetch = +refs/heads/repo/<fp>:refs/remotes/origin/repo/<fp>
 
 Git's default (`+refs/heads/*:refs/remotes/origin/*`, what `remote add` writes) makes a bare `attic fetch` or `attic pull` download the entire store into that one overlay's bare: every unrelated project's history, once per overlay on the machine. On a store of 18 overlays that turned a 31 KiB restore into a 45 MiB one.
 
-`attic sync` re-pins the refspec when it finds a mono overlay wired with the wildcard, so overlays created before this healed on their next sync. Per-host overlays keep the wildcard: their bare _is_ the whole overlay, so scoping it would be wrong.
+`sync`, `fetch`, `pull` and `rekey` re-pin the refspec when they find a mono overlay wired with the wildcard, so overlays created before this heal on their next call to any of them. All four narrow it _before_ they talk to the remote, which is the only ordering that helps: `sync` alone left `attic fetch` free to pull the whole store in first. Per-host overlays keep the wildcard: their bare _is_ the whole overlay, so scoping it would be wrong.
 
 Nothing else in the mono path needs the wide refspec. `attic sync` fetches an explicit branch (`fetch origin <branch>`), and the label commands work through a throwaway clone of `_attic/labels`, never the overlay bare.
 
