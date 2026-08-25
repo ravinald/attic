@@ -3,8 +3,10 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -17,6 +19,9 @@ import (
 
 // findingWedged marks an overlay stopped part-way through a rebase, merge, or cherry-pick.
 const findingWedged = "wedged"
+
+// findingOverFetch marks a mono overlay holding refs for projects other than its own.
+const findingOverFetch = "over-fetched"
 
 var doctorFlags struct {
 	fix   bool
@@ -33,8 +38,9 @@ type finding struct {
 	label     string
 	kind      string
 	detail    string
-	newLabel  string // non-empty → apply as the overlay's label
-	newOrigin string // non-empty → refresh the overlay's stored origin url
+	newLabel  string   // non-empty → apply as the overlay's label
+	newOrigin string   // non-empty → refresh the overlay's stored origin url
+	staleRefs []string // non-empty → drop these refs and repack the bare
 	fixable   bool
 	protected bool
 	anomaly   bool
@@ -42,12 +48,14 @@ type finding struct {
 
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
-	Short: "Audit every overlay's label against its origin remote and report (or fix) drift.",
+	Short: "Audit every overlay's label and storage against its remote, and report (or fix) drift.",
 	Long: `Sweeps every overlay on this machine and compares its label to the "owner/repo" slug of its
-host repo's current origin remote.
+host repo's current origin remote. It also reports a mono overlay holding refs for other projects,
+which is disk a narrowed fetch refspec cannot reclaim on its own.
 
 Without flags it only reports, exiting non-zero when fixable drift exists (suitable for a hook).
---fix rewrites auto-derived labels and refreshes moved origin URLs in the local meta.
+--fix rewrites auto-derived labels, refreshes moved origin URLs in the local meta, and drops
+foreign refs from a mono overlay before repacking it.
 --force additionally adopts the origin slug over a hand-set label.
 --fix --push publishes the corrected map to each affected mono remote (chains 'attic labels push').
 
@@ -72,8 +80,18 @@ Plain --fix stays local — offline and CI runs never touch the network unless y
 			if f := classify(m, overrides); f != nil {
 				findings = append(findings, *f)
 			}
+			// Separate from classify: disk waste is orthogonal to label drift, and classify reports one
+			// finding per overlay, so folding it in would let either condition mask the other.
+			if f := classifyOverFetch(m); f != nil {
+				findings = append(findings, *f)
+			}
 		}
-		sort.Slice(findings, func(i, j int) bool { return findings[i].fp < findings[j].fp })
+		sort.Slice(findings, func(i, j int) bool {
+			if findings[i].fp != findings[j].fp {
+				return findings[i].fp < findings[j].fp
+			}
+			return findings[i].kind < findings[j].kind
+		})
 
 		if len(findings) == 0 {
 			fmt.Printf("attic: %d overlay(s) checked — labels in sync\n", len(metas))
@@ -204,6 +222,132 @@ func classify(m store.Meta, overrides map[string]string) *finding {
 		fixable: true, detail: fmt.Sprintf("label %q → %q", m.DisplayLabel(), slug)}
 }
 
+// classifyOverFetch reports a mono overlay holding refs for other projects. Narrowing the fetch
+// refspec stops the next fetch from widening again but strands whatever earlier ones pulled, and
+// nothing collects it: `git remote prune` only drops refs whose upstream branch is gone, and these
+// branches are alive on the remote and now sit outside the refspec, so fetch never looks at them.
+//
+// Per-host overlays are exempt. Their bare *is* the whole overlay, so every ref in it belongs.
+func classifyOverFetch(m store.Meta) *finding {
+	if !m.Mono {
+		return nil
+	}
+	bare, err := store.BareDir(m.Fingerprint)
+	if err != nil {
+		return nil
+	}
+	if _, err := os.Stat(bare); err != nil {
+		return nil // bare-missing is classify's finding to report
+	}
+	repo := gitwrap.Repo{GitDir: bare}
+	stale, err := staleOverlayRefs(repo, m.Fingerprint)
+	if err != nil || len(stale) == 0 {
+		return nil
+	}
+	detail := fmt.Sprintf("%d ref(s) from other projects in a %s bare — `attic doctor --fix` drops them and repacks",
+		len(stale), humanKB(bareSizeKB(bare)))
+	return &finding{fp: m.Fingerprint, label: m.DisplayLabel(), kind: findingOverFetch,
+		staleRefs: stale, fixable: true, detail: detail}
+}
+
+// staleOverlayRefs lists refs in a mono overlay that are neither its own branch nor its own
+// remote-tracking ref. Both namespaces matter: `git clone --bare` writes foreign branches into
+// refs/heads/, so sweeping refs/remotes/ alone leaves them holding every object reachable — the
+// repack then reclaims nothing while reporting success.
+func staleOverlayRefs(repo gitwrap.Repo, fp string) ([]string, error) {
+	own := overlayBranchRef(fp)
+	ownRemote := "refs/remotes/origin/" + overlayBranch(fp)
+	head, _ := repo.Run("symbolic-ref", "-q", "HEAD")
+	head = strings.TrimSpace(head)
+
+	out, err := repo.Run("for-each-ref", "--format=%(refname)", "refs/heads/", "refs/remotes/")
+	if err != nil {
+		return nil, err
+	}
+	var stale []string
+	for _, r := range splitLines(out) {
+		if r == own || r == ownRemote || (head != "" && r == head) {
+			continue
+		}
+		stale = append(stale, r)
+	}
+	sort.Strings(stale)
+	return stale, nil
+}
+
+// overlayBranchRef is the fully-qualified ref for an overlay's own branch.
+func overlayBranchRef(fp string) string { return "refs/heads/" + overlayBranch(fp) }
+
+// reclaimOverlay drops stale refs and repacks so the orphaned objects leave the disk.
+//
+// refs/remotes/origin/HEAD is a symref, so `update-ref -d` removes the ref and leaves a dangling
+// pointer that fsck then reports; it needs `remote set-head --delete`. Getting that wrong, or missing
+// a foreign branch in refs/heads/, is what makes a reclaim grow the bare instead of shrinking it.
+//
+// repack rather than `gc --prune=now`: measured equivalent once every foreign ref is gone, but repack
+// states the intent, always leaves a single pack, and does not answer to the machine's gc config.
+func reclaimOverlay(fp string, stale []string) error {
+	bare, err := store.BareDir(fp)
+	if err != nil {
+		return err
+	}
+	repo := gitwrap.Repo{GitDir: bare}
+	if err := ensureMonoFetch(repo, overlayBranch(fp)); err != nil {
+		return err
+	}
+	for _, r := range stale {
+		if r == "refs/remotes/origin/HEAD" {
+			if _, err := repo.Run("remote", "set-head", "origin", "--delete"); err != nil {
+				return fmt.Errorf("drop origin/HEAD in %s: %w", bare, err)
+			}
+			continue
+		}
+		if _, err := repo.Run("update-ref", "-d", r); err != nil {
+			return fmt.Errorf("drop %s in %s: %w", r, bare, err)
+		}
+	}
+	if _, err := repo.Run("reflog", "expire", "--expire=now", "--all"); err != nil {
+		return fmt.Errorf("expire reflogs in %s: %w", bare, err)
+	}
+	if _, err := repo.Run("repack", "-a", "-d", "-l"); err != nil {
+		return fmt.Errorf("repack %s: %w", bare, err)
+	}
+	if _, err := repo.Run("prune", "--expire=now"); err != nil {
+		return fmt.Errorf("prune %s: %w", bare, err)
+	}
+	return nil
+}
+
+// bareSizeKB sums the overlay's on-disk size. It drives the detail line, since a ref count alone
+// does not say whether reclaiming is worth anyone's attention. An unreadable entry counts as zero:
+// reporting a smaller number is better than refusing to report a finding that is real.
+func bareSizeKB(bare string) int64 {
+	var total int64
+	_ = filepath.WalkDir(bare, func(_ string, e fs.DirEntry, err error) error {
+		if err != nil || e.IsDir() {
+			return nil //nolint:nilerr // an unreadable subtree must not abort the sweep
+		}
+		if info, err := e.Info(); err == nil {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total / 1024
+}
+
+// humanKB renders a kilobyte count the way du -h does, so the detail line reads like the tool an
+// operator would reach for to check it.
+func humanKB(kb int64) string {
+	switch {
+	case kb >= 1024*1024:
+		return fmt.Sprintf("%.1fG", float64(kb)/(1024*1024))
+	case kb >= 1024:
+		return fmt.Sprintf("%dM", kb/1024)
+	default:
+		return fmt.Sprintf("%dK", kb)
+	}
+}
+
 // overlaySequencer opens an overlay by fingerprint to ask whether it is stopped mid-operation.
 // doctor sweeps by metadata rather than from inside a host repo, so it cannot use openOverlay.
 func overlaySequencer(m store.Meta) (gitwrap.Sequencer, error) {
@@ -222,6 +366,18 @@ func applyFindings(findings []finding) (applied int, skipped []finding, remotes 
 	for _, f := range findings {
 		if f.anomaly || (f.protected && !doctorFlags.force) {
 			skipped = append(skipped, f)
+			continue
+		}
+		// Reclaiming touches the bare, not the meta, so it runs before the meta load and leaves the
+		// label fields alone. A failure is reported as skipped rather than aborting the sweep: the
+		// remaining overlays are independent, and stopping would hide their findings.
+		if len(f.staleRefs) > 0 {
+			if err := reclaimOverlay(f.fp, f.staleRefs); err != nil {
+				fmt.Fprintf(os.Stderr, "attic: doctor: %v\n", err)
+				skipped = append(skipped, f)
+				continue
+			}
+			applied++
 			continue
 		}
 		m, err := store.LoadMeta(f.fp)
@@ -289,7 +445,7 @@ func printFindings(w io.Writer, findings []finding) {
 }
 
 func init() {
-	doctorCmd.Flags().BoolVar(&doctorFlags.fix, "fix", false, "Rewrite drifted auto-labels and refresh moved origin URLs in local meta.")
+	doctorCmd.Flags().BoolVar(&doctorFlags.fix, "fix", false, "Rewrite drifted auto-labels, refresh moved origin URLs, and reclaim over-fetched overlays.")
 	doctorCmd.Flags().BoolVar(&doctorFlags.force, "force", false, "With --fix, also overwrite hand-set labels that drifted from origin.")
 	doctorCmd.Flags().BoolVar(&doctorFlags.push, "push", false, "With --fix, publish the corrected map to each affected mono remote.")
 	root.AddCommand(doctorCmd)

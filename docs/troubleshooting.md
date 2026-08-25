@@ -39,20 +39,30 @@ If the path belongs to the overlay and the host repo tracks it by mistake, hand 
 
 ## An overlay's bare is far larger than the files in it
 
-A mono overlay should hold one branch. Check the refspec:
+`attic doctor` reports this across every overlay on the machine, and `attic doctor --fix` repairs it:
 
-```sh
-attic exec config --get remote.origin.fetch     # want: +refs/heads/repo/<fp>:refs/remotes/origin/repo/<fp>
-attic exec for-each-ref refs/remotes/ | wc -l   # want: 1
-du -sh "$(attic where | awk '/^bare:/ {print $2}')"
+```text
+STATUS        FP            LABEL              DETAIL
+over-fetched  67c031190db7  ravinald/bodega    24 ref(s) from other projects in a 47M bare — `attic doctor --fix` drops them and repacks
 ```
 
-A wildcard (`+refs/heads/*:refs/remotes/origin/*`) means one fetch pulls every project on the remote into this overlay's bare. Measured on one machine: 48M against 496K for a correctly scoped sibling. `attic clone --mono` scopes the refspec, and `sync`, `fetch`, `pull` and `rekey` narrow it back if they find it widened, so running any of those on a current binary heals it. To reclaim the space already fetched:
+A mono overlay should hold one branch. With git's default refspec (`+refs/heads/*:refs/remotes/origin/*`) one fetch pulls every project on the remote into this overlay's bare: measured at 48M against 496K for a correctly scoped sibling. `attic clone --mono` scopes the refspec, and `sync`, `fetch`, `pull` and `rekey` narrow it back if they find it widened, so a current binary stops the growth on its own.
+
+Narrowing does not reclaim, and nothing collects it on its own. `git remote prune` drops only remote-tracking refs whose upstream branch is gone; these branches are alive on the remote and now sit outside the refspec, so fetch never considers them. Four overlays on one machine had a correctly scoped refspec and still carried 19, 19, 5 and 5 foreign refs at 46M, 46M, 38M and 30M.
+
+To do it by hand, sweep **both** ref namespaces. `git clone --bare` writes foreign branches into `refs/heads/`, so clearing `refs/remotes/` alone leaves them holding every object reachable, and the repack then frees nothing while appearing to succeed:
 
 ```sh
-attic exec remote prune origin
-attic exec gc --prune=now
+fp=$(attic where --fp)
+attic exec remote set-head origin --delete          # this one is a symref, not a plain ref
+attic exec for-each-ref --format='%(refname)' refs/heads/ refs/remotes/ \
+  | grep -v "repo/$fp$" \
+  | while read -r r; do attic exec update-ref -d "$r"; done
+attic exec reflog expire --expire=now --all
+attic exec repack -a -d -l && attic exec prune --expire=now
 ```
+
+Nothing dropped is lost: every one of those branches lives on the mono remote. The overlay's own branch and HEAD stay put, so its own commits survive whether they have been pushed or not. Confirm with `attic exec fsck --no-progress`, which stays silent when the symref was removed correctly.
 
 ## `attic pull`/`sync` says the overlay is mid-rebase
 

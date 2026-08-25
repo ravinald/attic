@@ -121,6 +121,8 @@ The branch is optional: local `meta.toml` always wins for the machine you're on,
 
 `attic doctor` reconciles the other direction: it compares each overlay's label against its host repo's origin slug and reports drift, since origins get renamed and transferred. It only ever writes the auto (origin-derived) label in local `meta.toml`; a curated name in the shared map and an overlay carrying a local override are both left alone. `--push` chains `labels push` for the affected mono remotes.
 
+It audits storage on the same sweep. A mono overlay is reported `over-fetched` when it holds any ref that is neither `repo/<fp>` nor its remote-tracking ref, and `--fix` drops those, narrows the refspec, and repacks. Both ref namespaces are swept, because `git clone --bare` writes foreign branches into `refs/heads/` rather than `refs/remotes/`: clearing only the latter leaves them holding every object reachable, and the repack then frees nothing while appearing to succeed. `refs/remotes/origin/HEAD` is a symref and needs `remote set-head --delete`; removing it with `update-ref -d` leaves a dangling pointer that `fsck` reports. Per-host overlays are exempt, since their bare is the whole overlay and every ref in it belongs.
+
 ### Multiple machines, same host repo
 
 A host repo cloned on two machines has the same root commit, the same fingerprint, and therefore the **same** `repo/<fp>` branch on the mono remote. There is no per-machine branch. Day-to-day this is just normal git collaboration on one branch: push from work, pull on home, commit, push back.
@@ -205,7 +207,7 @@ internal/cmd/                     # cobra commands, one file per command
   commit.go status.go sync.go     # status/sync surface the overlay's own view
   ls.go list.go where.go exec.go
   label.go labels_edit.go         # label resolution + the _attic/labels map
-  doctor.go                       # label, wedge and orphan audit across every overlay
+  doctor.go                       # label, wedge, orphan and over-fetch audit across every overlay
   rekey.go                        # re-point an overlay after a host history rewrite
   config.go                       # config get/set/list across layers
   passthrough.go                  # push/pull/fetch/log/diff
