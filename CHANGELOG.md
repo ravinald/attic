@@ -2,6 +2,20 @@
 
 All notable changes to `attic`.
 
+## [v0.3.0] — 2026-08-25
+
+### Changed
+
+- **`attic clone` refuses a mono remote when `--mono` is absent.** Without the flag, clone took the per-host-repo path: `git clone --bare <remote>`, which fetched every project's overlay branch, followed the remote HEAD to `_attic/labels` (where `attic init --mono-remote` points it on purpose, to aim GitHub's _Compare & pull request_ banner at a branch no overlay shares an ancestor with), and then checked that branch's `README.md` and `labels.toml` out over the host work tree. One `ls-remote --heads <remote> 'repo/*' '_attic/labels'` now runs before anything touches disk. It refuses rather than switching modes on its own: `--mono` decides where files land and what `meta.toml` records, so inferring it would let a mistyped URL change modes silently.
+- **`--force` no longer overwrites a path the host repo tracks.** A colliding path the host tracks has an owner upstream, and restoring an overlay over it destroys committed content. The flag keeps its purpose: reclaiming stray untracked copies of overlay files on a second machine.
+- **A `clone` that fails after creating the bare removes it.** A half-provisioned bare made the next attempt fail with `overlay already exists` while the real error scrolled away, so one wrong flag became a state nothing could diagnose: `attic where` reporting no overlay against a storage directory that plainly existed.
+- **`attic fetch` and `attic pull` narrow a mono overlay's fetch refspec before talking to the remote.** `sync` and `rekey` already did, which left the two commands whose whole job is downloading refs as the ones that could still drag the entire store into one overlay's bare. Measured on one machine: 48M against 496K for a correctly scoped sibling.
+- **One mono remote spelled several ways counts as one remote.** Overlays record the URL as it was typed, so `…/attic-overlays`, `…/attic-overlays/` and `…/attic-overlays.git` accumulate across a machine and the sole-mono-remote fallback read them as three, refusing to infer anything. `soleMonoRemote` now groups on a canonical key and hands git the most-used spelling. Transport stays part of the key: `git@github.com:o/r.git` and `https://github.com/o/r` name one repo but authenticate differently, so a machine holding both has two.
+
+### Added
+
+- `internal/cmd/clone_test.go`, which did not exist. Its fixture builds a repo with a mono remote's real ref layout, orphan `repo/<fp>` branches plus `_attic/labels` with HEAD left on the label branch, so the failure above is reproducible in-process rather than described.
+
 ## [v0.2.0] — 2026-08-22
 
 ### Added

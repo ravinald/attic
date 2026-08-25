@@ -51,7 +51,7 @@ Identity is the host repo's root commit SHA, stable across machines and clones. 
 ## Install
 
 ```sh
-go install github.com/ravinald/attic/cmd/attic@latest   # or @v0.2.0 to pin
+go install github.com/ravinald/attic/cmd/attic@latest   # or @v0.3.0 to pin
 ```
 
 Or from a checkout:
