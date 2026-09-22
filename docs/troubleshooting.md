@@ -154,7 +154,7 @@ Edits to already-tracked overlay files aren't staged automatically. Use `attic c
 
 ## Every attic command says "no overlay for &lt;path&gt;" but the overlay existed yesterday
 
-You rewrote the host repo's history. attic keys overlay storage by the host's root commit, so `git filter-repo`, `filter-branch`, a squashed or grafted root, or an amended root commit all move the key and orphan the overlay. The history is not lost: it is filed under the old fingerprint, on disk and on the remote.
+You rewrote the host repo's history. Every command that opens the overlay exits `4` rather than `1` in this state, so a hook or script can tell it apart from a repo with no overlay at all. attic keys overlay storage by the host's root commit, so `git filter-repo`, `filter-branch`, a squashed or grafted root, or an amended root commit all move the key and orphan the overlay. The history is not lost: it is filed under the old fingerprint, on disk and on the remote.
 
 Run **`attic rekey`** inside the host repo. It names both fingerprints, moves the storage dir, renames the `repo/<fp>` branch, rewrites the branch config and fetch refspec, and updates `meta.toml`. `--dry-run` prints the plan first. Then `attic push` to publish the new branch; the old one stays on the mono remote as a fallback.
 

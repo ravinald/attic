@@ -195,7 +195,7 @@ func noOverlayError(hr host.Repo) error {
 	}
 	b.WriteString("\nattic keys overlays by the host repo's root commit, so rewriting history (filter-repo, filter-branch, a squashed or grafted root) moves the key and orphans the overlay.")
 	b.WriteString("\nre-point it with `attic rekey`. Do NOT run `attic init`: that starts an empty overlay beside the existing one and leaves the real history unreachable.")
-	return errors.New(b.String())
+	return exitError{code: ExitOrphaned, err: errors.New(b.String())}
 }
 
 func init() {

@@ -162,6 +162,38 @@ func TestNoOverlayErrorNamesRekey(t *testing.T) {
 	}
 }
 
+// TestOrphanedOverlayExitCode holds the two "no overlay" cases apart at the exit status, since that
+// is all a hook discarding stderr can see. Both run through status, the command hooks gate on.
+func TestOrphanedOverlayExitCode(t *testing.T) {
+	t.Run("orphaned", func(t *testing.T) {
+		newRekeyFixture(t)
+		err := statusCmd.RunE(statusCmd, nil)
+		if err == nil {
+			t.Fatal("status succeeded against an orphaned overlay")
+		}
+		if got := ExitCode(err); got != ExitOrphaned {
+			t.Errorf("exit = %d, want %d (%v)", got, ExitOrphaned, err)
+		}
+	})
+	t.Run("absent", func(t *testing.T) {
+		t.Setenv("XDG_DATA_HOME", t.TempDir())
+		hostDir := t.TempDir()
+		writeFile(t, hostDir, "README.md", "# host")
+		git(t, hostDir, "init", "-q", ".")
+		git(t, hostDir, "add", "-A")
+		git(t, hostDir, "commit", "-qm", "init")
+		t.Chdir(hostDir)
+
+		err := statusCmd.RunE(statusCmd, nil)
+		if err == nil {
+			t.Fatal("status succeeded with no overlay")
+		}
+		if got := ExitCode(err); got != 1 {
+			t.Errorf("exit = %d, want 1 (%v)", got, err)
+		}
+	})
+}
+
 func TestRekeyNoopWhenAlreadyKeyed(t *testing.T) {
 	newRekeyFixtureAlreadyKeyed(t)
 
