@@ -134,6 +134,16 @@ attic clone git@github.com:you/myproject-attic.git
 | `attic exec -- <git-args>`                                       | Run any git command against the overlay.                                                                                                                                                                                                                                                            |
 | `attic version`                                                  | Version, commit, build date.                                                                                                                                                                                                                                                                        |
 
+### Exit status
+
+| Code | Meaning                                                                                                                                                                                      |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`  | Success.                                                                                                                                                                                     |
+| `1`  | Any error, including "no overlay for this repo".                                                                                                                                             |
+| `4`  | An overlay exists for this work tree under a stale fingerprint, because the host history was rewritten. Run `attic rekey`. Any command that opens the overlay returns it, `status` included. |
+
+A snapshot hook gating on `attic status --porcelain` should treat `4` as a warning, not as "no overlay here": skipping quietly there stops snapshots with no error until someone notices the history stopped.
+
 ## Labels: naming your overlays
 
 An overlay's identity is the host repo's root-commit SHA — stable, but unreadable. On the mono remote every project is a branch named `repo/<fingerprint>`:
