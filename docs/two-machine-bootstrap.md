@@ -4,8 +4,8 @@ You want to adopt `attic` on a repo you've been working in for a while. The host
 
 ## What not to do
 
-- **`attic init` on both machines and then push from each.** Same `repo/<fp>` branch, two unrelated histories: the second push gets rejected, and you have to merge with `--allow-unrelated-histories` anyway. Plan for the merge from the start.
-- **`attic clone --mono` on the second machine without moving its local copy aside first.** Clone refuses to clobber existing files, and `--force` overwrites home's edits and loses work. Don't. (`--force` stops at paths the host repo tracks, but the copy at issue here is untracked by construction, so that guard does not cover you.)
+- **`attic init` on both machines and then push from each.** Same `repo/<fp>` branch, two unrelated histories: the second push gets rejected, and you have to merge with `--allow-unrelated-histories` anyway. Plan for the merge from the start. (Init now refuses this unless you pass `--unrelated`, which step 2 does on purpose.)
+- **`attic clone --mono` on the second machine without moving its local copy aside first.** Clone refuses to overwrite existing files that differ from the overlay, and `--force` overwrites home's edits and loses work. Don't. (`--force` stops at paths the host repo tracks, but the copy at issue here is untracked by construction, so that guard does not cover you.)
 - **Skipping the fingerprint check.** Both machines must agree on the host repo's root commit. If they don't, you've got a different problem to fix first (a rewritten root, a fork). See [troubleshooting.md](troubleshooting.md).
 
 ```sh
@@ -32,11 +32,11 @@ Work's content is now on `origin/repo/<fp>`.
 
 ### 2. On **home**: initialize locally and commit home's copy
 
-`notes/` is already populated with home's content — don't move it.
+`notes/` is already populated with home's content, so don't move it. `--unrelated` tells init you mean to start a second history: without it, init sees work's `repo/<fp>` on the remote and refuses in favor of `attic clone`.
 
 ```sh
 cd ~/git/myproject
-attic init --mono-remote git@github.com:you/attic-overlays.git
+attic init --unrelated --mono-remote git@github.com:you/attic-overlays.git
 attic add notes/
 attic commit -m "myproject: notes (home)"
 ```

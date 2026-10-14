@@ -7,6 +7,24 @@ import (
 	"testing"
 )
 
+// TestMain points both XDG roots at a scratch directory before any test runs. Commands under test
+// write machine config as a side effect (clone and init record the default mono remote), and a test
+// that sets only XDG_DATA_HOME would otherwise write that into the developer's real config.
+func TestMain(m *testing.M) {
+	scratch, err := os.MkdirTemp("", "attic-cmd-test-")
+	if err != nil {
+		panic(err)
+	}
+	for _, v := range []string{"XDG_CONFIG_HOME", "XDG_DATA_HOME"} {
+		if err := os.Setenv(v, filepath.Join(scratch, v)); err != nil {
+			panic(err)
+		}
+	}
+	code := m.Run()
+	_ = os.RemoveAll(scratch)
+	os.Exit(code)
+}
+
 // TestRelativiseToHostResolvesNearestExistingAncestor pins the macOS shape of this bug: the host root
 // is canonicalised at detection (/private/var/...) while the cwd a user types from is not (/var/...).
 // EvalSymlinks needs a path to exist, so a path being registered before it is created kept the

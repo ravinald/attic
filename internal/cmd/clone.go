@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -24,23 +25,16 @@ var cloneCmd = &cobra.Command{
 	Long: `Clones the bare overlay locally and checks out tracked paths into the host work tree.
 
 For a per-host-repo remote (default): clones the whole bare from <remote>.
-For a shared mono remote (--mono): clones only the repo/<fp> branch from <remote>, where <fp> is the host repo's fingerprint. With --mono the remote may be omitted when this machine already has exactly one mono remote.
+For a shared mono remote (--mono): clones only the repo/<fp> branch from <remote>, where <fp> is the host repo's fingerprint.
 
-Refuses to clobber existing files unless --force, and refuses paths the host repo tracks either way.`,
+With no <remote>, clone uses this machine's default mono remote: the global mono.remote setting, else the one mono remote this machine's overlays already use. --mono is implied there. Set the default once per machine with 'attic config set --global mono.remote <url>'; the first mono init or clone sets it when unset.
+
+Refuses to overwrite existing files that differ from the overlay's copy unless --force, and refuses paths the host repo tracks either way.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
-		var remote string
-		switch {
-		case len(args) == 1:
-			remote = args[0]
-		case cloneFlags.mono:
-			r, err := soleMonoRemote()
-			if err != nil {
-				return fmt.Errorf("clone: %w", err)
-			}
-			remote = r
-		default:
-			return fmt.Errorf("clone: a remote URL is required (or use --mono to default to this machine's mono remote)")
+		remote, mono, err := resolveCloneRemote(args, cloneFlags.mono)
+		if err != nil {
+			return err
 		}
 		hr, err := resolveHost()
 		if err != nil {
@@ -57,12 +51,12 @@ Refuses to clobber existing files unless --force, and refuses paths the host rep
 		// A mono remote carries one orphan branch per fingerprint plus the label map, and its HEAD points
 		// at none of this repo's files. Cloning it whole drags every project's history in and checks the
 		// label branch out over the host work tree, so name the flag rather than guess the mode.
-		if !cloneFlags.mono {
-			mono, err := remoteLooksMono(remote)
+		if !mono {
+			looksMono, err := remoteLooksMono(remote)
 			if err != nil {
 				return err
 			}
-			if mono {
+			if looksMono {
 				return fmt.Errorf("clone: %s is a shared mono remote — pass --mono to take branch %s from it",
 					remote, overlayBranch(fp))
 			}
@@ -82,7 +76,7 @@ Refuses to clobber existing files unless --force, and refuses paths the host rep
 		}()
 
 		branch := "main"
-		if cloneFlags.mono {
+		if mono {
 			branch = overlayBranch(fp)
 			// Pre-flight: confirm the branch exists on the mono remote so the user gets a useful error.
 			has, err := remoteHasBranch(gitwrap.Repo{}, remote, branch)
@@ -105,7 +99,7 @@ Refuses to clobber existing files unless --force, and refuses paths the host rep
 			return err
 		}
 		repo := gitwrap.Repo{GitDir: bare, WorkTree: hr.Root}
-		if cloneFlags.mono {
+		if mono {
 			if err := repo.Stream("config", "push.default", "current"); err != nil {
 				return err
 			}
@@ -127,15 +121,16 @@ Refuses to clobber existing files unless --force, and refuses paths the host rep
 		}
 
 		// Enumerate tracked paths and refuse to clobber existing work-tree files.
-		out, err := repo.Run("ls-tree", "-r", "--name-only", "HEAD")
+		blobs, err := overlayBlobs(repo)
 		if err != nil {
 			return err
 		}
-		paths := splitLines(out)
+		paths := make([]string, 0, len(blobs))
 		var collisions []string
-		for _, p := range paths {
-			if _, err := os.Stat(filepath.Join(hr.Root, p)); err == nil {
-				collisions = append(collisions, p)
+		for _, b := range blobs {
+			paths = append(paths, b.path)
+			if _, err := os.Lstat(filepath.Join(hr.Root, b.path)); err == nil {
+				collisions = append(collisions, b.path)
 			}
 		}
 		// A colliding path the host repo tracks already has an owner, and restoring an overlay over it
@@ -148,6 +143,13 @@ Refuses to clobber existing files unless --force, and refuses paths the host rep
 		if len(tracked) > 0 {
 			return fmt.Errorf("clone: %d colliding path(s) are tracked by the host repo, which owns them "+
 				"— --force does not cover these:\n  %s", len(tracked), strings.Join(tracked, "\n  "))
+		}
+		// A file already holding the overlay's exact bytes is not at risk: checkout rewrites it unchanged.
+		// Counting it would force --force onto a copy made by hand, and --force then also covers the
+		// files that do differ.
+		collisions, identical, err := dropIdentical(repo, hr.Root, blobs, collisions)
+		if err != nil {
+			return err
 		}
 		if len(collisions) > 0 && !cloneFlags.force {
 			return fmt.Errorf("clone: %d existing file(s) would be overwritten — pass --force to proceed:\n  %s",
@@ -181,7 +183,7 @@ Refuses to clobber existing files unless --force, and refuses paths the host rep
 			OriginURL:   hr.OriginURL,
 			Remote:      remote,
 			Branch:      branch,
-			Mono:        cloneFlags.mono,
+			Mono:        mono,
 			CreatedAt:   time.Now().UTC(),
 		}
 		if slug, ok := hr.OwnerRepo(); ok {
@@ -193,13 +195,105 @@ Refuses to clobber existing files unless --force, and refuses paths the host rep
 		}
 		provisioned = true
 		modeNote := ""
-		if cloneFlags.mono {
+		if mono {
 			modeNote = " (mono)"
 		}
-		fmt.Printf("attic: cloned overlay for %s\n  bare:   %s\n  fp:     %s\n  branch: %s\n  remote: %s%s\n  files:  %d\n",
-			hr.Root, bare, fp, branch, remote, modeNote, len(paths))
+		sameNote := ""
+		if identical > 0 {
+			sameNote = fmt.Sprintf(" (%d already identical on disk)", identical)
+		}
+		fmt.Printf("attic: cloned overlay for %s\n  bare:   %s\n  fp:     %s\n  branch: %s\n  remote: %s%s\n  files:  %d%s\n",
+			hr.Root, bare, fp, branch, remote, modeNote, len(paths), sameNote)
+		if mono {
+			seedMonoRemote(remote)
+		}
 		return nil
 	},
+}
+
+// resolveCloneRemote picks the remote and mode. A URL the user typed keeps the mode the flag gives it,
+// so a typo cannot silently switch modes; with no URL the remote comes from the machine default, which
+// is a mono remote by definition, so --mono is implied.
+func resolveCloneRemote(args []string, monoFlag bool) (string, bool, error) {
+	if len(args) == 1 {
+		return args[0], monoFlag, nil
+	}
+	r, err := defaultMonoRemote()
+	if err != nil {
+		return "", false, fmt.Errorf("clone: %w", err)
+	}
+	return r, true, nil
+}
+
+// overlayBlob is one entry of the overlay's HEAD tree.
+type overlayBlob struct {
+	mode, oid, path string
+}
+
+// overlayBlobs lists every file in the overlay's HEAD tree with its object id, so a collision can be
+// judged by content rather than by existence alone.
+func overlayBlobs(repo gitwrap.Repo) ([]overlayBlob, error) {
+	out, err := repo.Run("ls-tree", "-r", "-z", "HEAD")
+	if err != nil {
+		return nil, err
+	}
+	var blobs []overlayBlob
+	for rec := range strings.SplitSeq(out, "\x00") {
+		meta, path, ok := strings.Cut(rec, "\t")
+		if !ok {
+			continue
+		}
+		f := strings.Fields(meta) // <mode> <type> <oid>
+		if len(f) != 3 {
+			return nil, fmt.Errorf("clone: unexpected ls-tree record %q", rec)
+		}
+		blobs = append(blobs, overlayBlob{mode: f[0], oid: f[2], path: path})
+	}
+	return blobs, nil
+}
+
+// dropIdentical removes from collisions every regular file whose content already hashes to the
+// overlay's blob, and returns how many it dropped. Symlinks, submodules and anything that is not a
+// regular file on disk stay collisions: hash-object follows a symlink, so it would compare the wrong
+// bytes.
+func dropIdentical(repo gitwrap.Repo, root string, blobs []overlayBlob, collisions []string) ([]string, int, error) {
+	want := make(map[string]overlayBlob, len(blobs))
+	for _, b := range blobs {
+		want[b.path] = b
+	}
+	var candidates, abs []string
+	var kept []string
+	for _, p := range collisions {
+		b := want[p]
+		fi, err := os.Lstat(filepath.Join(root, p))
+		if err != nil || !fi.Mode().IsRegular() || (b.mode != "100644" && b.mode != "100755") {
+			kept = append(kept, p)
+			continue
+		}
+		candidates = append(candidates, p)
+		abs = append(abs, filepath.Join(root, p))
+	}
+	if len(candidates) == 0 {
+		return kept, 0, nil
+	}
+	out, err := repo.Run(append([]string{"hash-object", "--"}, abs...)...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("clone: hash existing files: %w", err)
+	}
+	oids := splitLines(out)
+	if len(oids) != len(candidates) {
+		return nil, 0, fmt.Errorf("clone: hash-object returned %d ids for %d files", len(oids), len(candidates))
+	}
+	identical := 0
+	for i, p := range candidates {
+		if oids[i] == want[p].oid {
+			identical++
+			continue
+		}
+		kept = append(kept, p)
+	}
+	sort.Strings(kept)
+	return kept, identical, nil
 }
 
 // monoRefPatterns match refs only a shared mono remote carries: one orphan branch per overlay
@@ -220,6 +314,6 @@ func remoteLooksMono(remote string) (bool, error) {
 
 func init() {
 	cloneCmd.Flags().BoolVar(&cloneFlags.force, "force", false, "Overwrite untracked files in the work tree (never paths the host repo tracks).")
-	cloneCmd.Flags().BoolVar(&cloneFlags.mono, "mono", false, "Treat <remote> as a shared mono repo and clone only branch repo/<fp>.")
+	cloneCmd.Flags().BoolVar(&cloneFlags.mono, "mono", false, "Treat <remote> as a shared mono repo and clone only branch repo/<fp> (implied when <remote> is omitted).")
 	root.AddCommand(cloneCmd)
 }

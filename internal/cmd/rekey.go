@@ -10,6 +10,7 @@ import (
 
 	"github.com/ravinald/attic/internal/gitwrap"
 	"github.com/ravinald/attic/internal/host"
+	"github.com/ravinald/attic/internal/ignore"
 	"github.com/ravinald/attic/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -186,7 +187,7 @@ func printRekeyPlan(w io.Writer, old store.Meta, newFP, oldDir, newDir, newBranc
 func noOverlayError(hr host.Repo) error {
 	orphans, err := store.FindMetasByHostRoot(hr.Root)
 	if err != nil || len(orphans) == 0 {
-		return fmt.Errorf("no overlay for %s — run `attic init` or `attic clone <remote>`", hr.Root)
+		return missingOverlayError(hr)
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "no overlay for %s at fingerprint %s", hr.Root, hr.Fingerprint())
@@ -196,6 +197,25 @@ func noOverlayError(hr host.Repo) error {
 	b.WriteString("\nattic keys overlays by the host repo's root commit, so rewriting history (filter-repo, filter-branch, a squashed or grafted root) moves the key and orphans the overlay.")
 	b.WriteString("\nre-point it with `attic rekey`. Do NOT run `attic init`: that starts an empty overlay beside the existing one and leaves the real history unreachable.")
 	return exitError{code: ExitOrphaned, err: errors.New(b.String())}
+}
+
+// missingOverlayError covers a work tree with no overlay storage at all. A committed attic block in
+// the host .gitignore means some machine created an overlay for this repo, so this is a fresh checkout
+// and `attic init` would start an empty history beside the real one.
+func missingOverlayError(hr host.Repo) error {
+	blk, err := ignore.Load(gitignorePath(hr))
+	if err != nil || len(blk.Lines) == 0 {
+		return fmt.Errorf("no overlay for %s — run `attic init` or `attic clone <remote>`", hr.Root)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "no overlay for %s on this machine, but its .gitignore carries an attic block, so one exists elsewhere", hr.Root)
+	if remote, err := defaultMonoRemote(); err == nil {
+		fmt.Fprintf(&b, "\nrestore it with `attic clone` (from %s)", remote)
+	} else {
+		b.WriteString("\nrestore it with `attic clone <remote>`, or set this machine's default once with " +
+			"`attic config set --global mono.remote <url>` and run `attic clone`")
+	}
+	return errors.New(b.String())
 }
 
 func init() {
