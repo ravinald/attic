@@ -50,7 +50,7 @@ func TestSoleMonoRemote(t *testing.T) {
 		want    string
 		wantErr string
 	}{
-		{name: "no mono overlays", wantErr: "no mono-remote overlays"},
+		{name: "no mono overlays", wantErr: "no mono remote known"},
 		{name: "one spelling", remotes: []string{slash, slash}, want: slash},
 		{
 			name:    "three spellings of one remote",

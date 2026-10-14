@@ -14,6 +14,7 @@ import (
 const (
 	onDuplicateKey  = "gitignore.on_duplicate"
 	statusIgnoreKey = "status.ignore"
+	monoRemoteKey   = "mono.remote"
 )
 
 var configFlags struct {
@@ -37,7 +38,11 @@ Keys:
                            list in 'attic status' and 'attic commit' (default: none). A pattern
                            with no slash matches the basename at any depth (.DS_Store), a trailing
                            slash matches a directory's contents (scratch/), anything else matches
-                           the whole host-relative path (docs-internal/*.tmp). Set it empty to clear.`,
+                           the whole host-relative path (docs-internal/*.tmp). Set it empty to clear.
+  mono.remote              URL of the shared mono remote 'attic clone' and 'attic labels' use when
+                           none is given (global only). The first 'attic init --mono-remote' or
+                           'attic clone --mono <url>' on a machine sets it when unset. Set it empty
+                           to clear.`,
 }
 
 var configGetCmd = &cobra.Command{
@@ -56,6 +61,15 @@ var configGetCmd = &cobra.Command{
 		case statusIgnoreKey:
 			for _, p := range resolveStatusIgnore() {
 				fmt.Println(p)
+			}
+			return nil
+		case monoRemoteKey:
+			c, err := store.LoadConfig()
+			if err != nil {
+				return err
+			}
+			if c.Mono.Remote != "" {
+				fmt.Println(c.Mono.Remote)
 			}
 			return nil
 		}
@@ -84,6 +98,8 @@ var configSetCmd = &cobra.Command{
 				}
 			}
 			return setStatusIgnore(pats)
+		case monoRemoteKey:
+			return setMonoRemote(val)
 		}
 		return unknownConfigKey(key)
 	},
@@ -97,7 +113,26 @@ var configListCmd = &cobra.Command{
 }
 
 func unknownConfigKey(k string) error {
-	return fmt.Errorf("unknown config key %q — known keys: %s, %s", k, onDuplicateKey, statusIgnoreKey)
+	return fmt.Errorf("unknown config key %q — known keys: %s, %s, %s", k, onDuplicateKey, statusIgnoreKey, monoRemoteKey)
+}
+
+// setMonoRemote writes the machine default. There is no per-repo layer: an overlay's own remote is
+// already in its meta and git config, and a second copy there could only disagree with it.
+func setMonoRemote(val string) error {
+	if !configFlags.global {
+		return fmt.Errorf("%s is machine-wide — pass --global", monoRemoteKey)
+	}
+	c, err := store.LoadConfig()
+	if err != nil {
+		return err
+	}
+	c.Mono.Remote = strings.TrimSpace(val)
+	if err := store.SaveConfig(c); err != nil {
+		return err
+	}
+	p, _ := store.ConfigPath()
+	fmt.Printf("attic: %s = %s (global: %s)\n", monoRemoteKey, orUnset(c.Mono.Remote), p)
+	return nil
 }
 
 func setOnDuplicate(val string) error {
@@ -187,6 +222,9 @@ func listConfig() error {
 	fmt.Printf("  per-repo:  %s\n", orNone(statusIgnorePerRepo()))
 	fmt.Printf("  global:    %s\n", orNone(global.Status.Ignore))
 	fmt.Printf("  effective: %s\n", orNone(resolveStatusIgnore()))
+
+	fmt.Println(monoRemoteKey + "  (global only)")
+	fmt.Printf("  global:    %s\n", orUnset(global.Mono.Remote))
 	return nil
 }
 

@@ -266,3 +266,109 @@ func setCloneFlags(t *testing.T, mono, force bool) {
 	cloneFlags.mono = mono
 	cloneFlags.force = force
 }
+
+// On a fresh machine no overlay exists to borrow a remote from, so the configured default is the only
+// thing that lets `attic clone` run bare. It must also imply --mono: the default is a mono remote.
+func TestCloneNoArgsUsesConfiguredMonoRemote(t *testing.T) {
+	fx := newCloneFixture(t, map[string]string{"docs-internal/a.md": "doc"})
+	setMonoDefault(t, fx.remote)
+	setCloneFlags(t, false, false)
+
+	if err := cloneCmd.RunE(cloneCmd, nil); err != nil {
+		t.Fatalf("clone with no args: %v", err)
+	}
+	m, err := store.LoadMeta(fx.fp)
+	if err != nil {
+		t.Fatalf("load meta: %v", err)
+	}
+	if !m.Mono || m.Branch != overlayBranch(fx.fp) || m.Remote != fx.remote {
+		t.Errorf("meta = mono %v branch %q remote %q, want mono on %s from %s", m.Mono, m.Branch, m.Remote, overlayBranch(fx.fp), fx.remote)
+	}
+	if _, err := os.Stat(filepath.Join(fx.hostRoot, "docs-internal", "a.md")); err != nil {
+		t.Errorf("overlay file not restored: %v", err)
+	}
+}
+
+func TestCloneNoArgsWithoutDefaultNamesTheConfigKey(t *testing.T) {
+	newCloneFixture(t, map[string]string{"docs-internal/a.md": "doc"})
+	setMonoDefault(t, "")
+	setCloneFlags(t, false, false)
+
+	err := cloneCmd.RunE(cloneCmd, nil)
+	if err == nil {
+		t.Fatal("clone with no args and no default succeeded")
+	}
+	if !strings.Contains(err.Error(), monoRemoteKey) {
+		t.Errorf("error does not name %s: %v", monoRemoteKey, err)
+	}
+}
+
+// The first mono clone on a machine records its remote so the next repo needs no URL, and never
+// repoints a default someone already chose.
+func TestCloneSeedsMonoDefaultOnlyWhenUnset(t *testing.T) {
+	for _, tc := range []struct {
+		name, existing string
+		wantOwn        bool
+	}{
+		{"unset is seeded", "", true},
+		{"existing is kept", "git@example.invalid:you/elsewhere.git", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fx := newCloneFixture(t, map[string]string{"docs-internal/a.md": "doc"})
+			setMonoDefault(t, tc.existing)
+			setCloneFlags(t, true, false)
+
+			if err := cloneCmd.RunE(cloneCmd, []string{fx.remote}); err != nil {
+				t.Fatalf("clone --mono: %v", err)
+			}
+			c, err := store.LoadConfig()
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := tc.existing
+			if tc.wantOwn {
+				want = fx.remote
+			}
+			if c.Mono.Remote != want {
+				t.Errorf("mono.remote = %q, want %q", c.Mono.Remote, want)
+			}
+		})
+	}
+}
+
+// A file already holding the overlay's bytes is not at risk, so it must not demand --force; one that
+// differs still must, and the refusal names only that one.
+func TestCloneCollisionsCompareContent(t *testing.T) {
+	fx := newCloneFixture(t, map[string]string{
+		"docs-internal/same.md": "same bytes",
+		"docs-internal/diff.md": "overlay bytes",
+	})
+	writeFile(t, fx.hostRoot, "docs-internal/same.md", "same bytes")
+	writeFile(t, fx.hostRoot, "docs-internal/diff.md", "local edit")
+	setCloneFlags(t, true, false)
+
+	err := cloneCmd.RunE(cloneCmd, []string{fx.remote})
+	if err == nil {
+		t.Fatal("clone overwrote a differing file without --force")
+	}
+	if !strings.Contains(err.Error(), "diff.md") || strings.Contains(err.Error(), "same.md") {
+		t.Errorf("refusal should name diff.md alone: %v", err)
+	}
+
+	writeFile(t, fx.hostRoot, "docs-internal/diff.md", "overlay bytes")
+	if err := cloneCmd.RunE(cloneCmd, []string{fx.remote}); err != nil {
+		t.Fatalf("clone refused files identical to the overlay: %v", err)
+	}
+}
+
+// setMonoDefault gives the test its own machine config holding remote (or nothing).
+func setMonoDefault(t *testing.T, remote string) {
+	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if remote == "" {
+		return
+	}
+	if err := store.SaveConfig(store.Config{Mono: store.MonoConfig{Remote: remote}}); err != nil {
+		t.Fatal(err)
+	}
+}

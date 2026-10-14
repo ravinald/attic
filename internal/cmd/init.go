@@ -18,6 +18,7 @@ var initFlags struct {
 	remote     string
 	monoRemote string
 	ghPrivate  bool
+	unrelated  bool
 }
 
 var initCmd = &cobra.Command{
@@ -29,7 +30,9 @@ Two remote shapes:
   --remote URL        per-host-repo remote (origin/main). One GitHub repo per host.
   --mono-remote URL   shared remote with one branch per fingerprint (repo/<fp>). One GitHub repo for ALL hosts.
 
---gh-private creates a private per-host repo via the gh CLI (mutually exclusive with the others).`,
+--gh-private creates a private per-host repo via the gh CLI (mutually exclusive with the others).
+
+With --mono-remote, init refuses when repo/<fp> already exists on the remote: this repo already has an overlay, and 'attic clone' restores it. --unrelated starts a separate local history anyway, for a machine whose own copy you intend to merge with --allow-unrelated-histories.`,
 	RunE: func(_ *cobra.Command, _ []string) error {
 		hr, err := resolveHost()
 		if err != nil {
@@ -43,14 +46,26 @@ Two remote shapes:
 		if _, err := os.Stat(bare); err == nil {
 			return fmt.Errorf("overlay already exists at %s", bare)
 		}
-		if err := os.MkdirAll(bare, 0o755); err != nil {
-			return fmt.Errorf("init: mkdir %s: %w", bare, err)
-		}
-
 		mode, err := resolveMode(initFlags.remote, initFlags.monoRemote, initFlags.ghPrivate)
 		if err != nil {
 			return err
 		}
+		if mode == modeMono && !initFlags.unrelated {
+			if err := refuseExistingMonoBranch(initFlags.monoRemote, overlayBranch(fp)); err != nil {
+				return err
+			}
+		}
+		if err := os.MkdirAll(bare, 0o755); err != nil {
+			return fmt.Errorf("init: mkdir %s: %w", bare, err)
+		}
+		// A bare left behind by a failed init makes every retry die on "overlay already exists" and
+		// hides the real error. meta is written last, so removing the bare leaves no record either.
+		provisioned := false
+		defer func() {
+			if !provisioned {
+				_ = os.RemoveAll(bare)
+			}
+		}()
 
 		branch := "main"
 		if mode == modeMono {
@@ -114,6 +129,7 @@ Two remote shapes:
 		if err := store.SaveMeta(m); err != nil {
 			return err
 		}
+		provisioned = true
 
 		fmt.Printf("attic: initialised overlay for %s\n  bare:   %s\n  fp:     %s\n  branch: %s\n", hr.Root, bare, fp, branch)
 		switch {
@@ -126,6 +142,7 @@ Two remote shapes:
 		}
 		if mode == modeMono {
 			publishMonoLabels(remote)
+			seedMonoRemote(remote)
 		}
 		return nil
 	},
@@ -166,6 +183,25 @@ func publishMonoLabels(remote string) {
 	fmt.Printf("attic: default branch set to %s — the map is now the repo landing page\n", labelsBranch)
 }
 
+// refuseExistingMonoBranch stops a second machine from starting an unrelated history on a branch that
+// already carries one. Without it the mistake surfaces only at the first push, as a rejection, after
+// the user has already added and committed files into the wrong history. An unreachable remote is
+// not a refusal: init has always worked offline.
+func refuseExistingMonoBranch(remote, branch string) error {
+	has, err := remoteHasBranch(gitwrap.Repo{}, remote, branch)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "attic: could not check %s for an existing %s (%v); continuing\n", remote, branch, err)
+		return nil
+	}
+	if !has {
+		return nil
+	}
+	return fmt.Errorf("init: %s already exists on %s, so this repo already has an overlay\n"+
+		"  restore it with `attic clone --mono %s`\n"+
+		"  or pass --unrelated to start a separate history you will merge (docs/two-machine-bootstrap.md)",
+		branch, remote, remote)
+}
+
 type initMode int
 
 const (
@@ -201,5 +237,6 @@ func init() {
 	initCmd.Flags().StringVar(&initFlags.remote, "remote", "", "Per-host-repo remote URL (origin/main).")
 	initCmd.Flags().StringVar(&initFlags.monoRemote, "mono-remote", "", "Shared mono remote URL — overlay is pushed to branch repo/<fp> on this repo.")
 	initCmd.Flags().BoolVar(&initFlags.ghPrivate, "gh-private", false, "Create a private per-host GitHub repo via `gh` and use it as origin.")
+	initCmd.Flags().BoolVar(&initFlags.unrelated, "unrelated", false, "With --mono-remote, start a new history even when repo/<fp> already exists on the remote.")
 	root.AddCommand(initCmd)
 }

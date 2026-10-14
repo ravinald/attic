@@ -12,6 +12,27 @@ Identity is the root commit SHA. A repo with zero commits has no root. Make a fi
 
 Most likely a symlink mismatch: macOS's `/var` is a symlink to `/private/var`, so `mktemp` paths and `git rev-parse --show-toplevel` can disagree on the canonical form. `attic` resolves both sides via `EvalSymlinks`, so this should be fixed. If you still see it, the path you're adding is genuinely outside the host repo (you typed `../other/file`, say).
 
+## `attic clone` says "no mono remote known on this machine"
+
+`attic clone` with no URL reads the global `mono.remote`, then falls back to the one mono remote this machine's overlays use. A fresh machine has neither. Set the default once and clone:
+
+```sh
+attic config set --global mono.remote git@github.com:you/attic-overlays.git
+attic clone
+```
+
+Or pass the URL for this one clone (`attic clone --mono <url>`), which also records it as the default when none is set. With overlays on two mono remotes and no `mono.remote`, the error lists both: set the one you want, or pass it.
+
+## `attic status` says the `.gitignore` "carries an attic block, so one exists elsewhere"
+
+This checkout has no overlay, but the host repo's committed `.gitignore` names overlay paths, so another machine created one. Restore it with `attic clone`. Do not run `attic init`: it starts an empty history beside the real one.
+
+## `attic init` says `repo/<fp>` "already exists"
+
+The mono remote already has this repo's overlay, so you want `attic clone`, not `init`. Init refuses because a second history on the same branch is rejected at the first push, after you have already committed into it.
+
+If this machine has its own populated copy you intend to merge with the remote one, that is the deliberate case: pass `--unrelated` and follow [two-machine-bootstrap.md](two-machine-bootstrap.md).
+
 ## `attic clone --mono` says "no overlay branch `repo/<fp>`"
 
 The host repo on this machine has a fingerprint that doesn't exist on the mono remote. Causes:

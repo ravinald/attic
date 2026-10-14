@@ -32,6 +32,7 @@ func ValidOnDuplicate(m string) bool {
 type Config struct {
 	Gitignore GitignoreConfig `toml:"gitignore"`
 	Status    StatusConfig    `toml:"status"`
+	Mono      MonoConfig      `toml:"mono"`
 }
 
 // GitignoreConfig holds host .gitignore management policy.
@@ -42,6 +43,12 @@ type GitignoreConfig struct {
 // StatusConfig holds reporting policy for `attic status` and `attic commit`.
 type StatusConfig struct {
 	Ignore []string `toml:"ignore,omitempty"`
+}
+
+// MonoConfig names this machine's default mono remote. It lives in machine config rather than in
+// the host repo because a public host repo would otherwise publish where its private overlay lives.
+type MonoConfig struct {
+	Remote string `toml:"remote,omitempty"`
 }
 
 // ConfigPath returns the global config file path.

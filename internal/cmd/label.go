@@ -298,9 +298,9 @@ var labelsPullCmd = &cobra.Command{
 }
 
 // resolveMonoRemote picks the mono remote the labels commands act on. Precedence: the --remote flag,
-// then the overlay for the current directory, then — when cwd isn't an overlay — the single mono
-// remote known to this machine. It errors only when that fallback is ambiguous (more than one) or
-// empty, so `attic labels edit` works from anywhere as long as the target is unambiguous.
+// then the overlay for the current directory, then — when cwd isn't an overlay — this machine's
+// default (defaultMonoRemote). It errors only when that default is ambiguous or absent, so
+// `attic labels edit` works from anywhere as long as the target is unambiguous.
 func resolveMonoRemote() (string, error) {
 	if labelsFlags.remote != "" {
 		return labelsFlags.remote, nil
@@ -312,7 +312,38 @@ func resolveMonoRemote() (string, error) {
 			}
 		}
 	}
+	return defaultMonoRemote()
+}
+
+// defaultMonoRemote is the mono remote a command uses when none is named: the global mono.remote,
+// else the one remote this machine's overlays already point at. The config layer comes first because
+// it is the only one a fresh host has, and a host with overlays on two remotes still needs an answer.
+func defaultMonoRemote() (string, error) {
+	c, err := store.LoadConfig()
+	if err != nil {
+		return "", err
+	}
+	if c.Mono.Remote != "" {
+		return c.Mono.Remote, nil
+	}
 	return soleMonoRemote()
+}
+
+// seedMonoRemote records remote as this machine's default the first time a mono overlay is wired, so
+// the next repo restored on this host needs no URL. An existing value is never replaced: the user set
+// it, or an earlier overlay did, and silently repointing it would send later clones somewhere else.
+// Best-effort, since the overlay itself is already usable.
+func seedMonoRemote(remote string) {
+	c, err := store.LoadConfig()
+	if err != nil || c.Mono.Remote != "" {
+		return
+	}
+	c.Mono.Remote = remote
+	if err := store.SaveConfig(c); err != nil {
+		fmt.Fprintf(os.Stderr, "attic: could not record %s as the default mono remote: %v\n", remote, err)
+		return
+	}
+	fmt.Printf("attic: %s = %s (global default for `attic clone` on this machine)\n", monoRemoteKey, remote)
 }
 
 // soleMonoRemote returns the one mono remote this machine's overlays point at. It errors when there
@@ -344,7 +375,7 @@ func soleMonoRemote() (string, error) {
 	keys := slices.Sorted(maps.Keys(spellings))
 	switch len(keys) {
 	case 0:
-		return "", errors.New("no mono-remote overlays on this machine — pass the remote URL explicitly, or run `attic init --mono-remote <url>` first")
+		return "", errors.New("no mono remote known on this machine — pass the remote URL explicitly, or set a default with `attic config set --global mono.remote <url>`")
 	case 1:
 		return dominantSpelling(spellings[keys[0]]), nil
 	default:

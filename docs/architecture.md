@@ -61,7 +61,15 @@ The two modes are not interchangeable, and the wrong one is destructive rather t
 
 It refuses rather than switching modes on its own. `--mono` decides where files land and what `meta.toml` records, so inferring it would let a mistyped URL change modes without saying so; naming the flag in the error costs one retry and teaches the distinction. The probe is a round-trip the `--mono` path already pays for its branch pre-flight, so the common case is no slower.
 
-Two more properties keep a wrong invocation cheap to undo. A clone that fails anywhere after creating the bare removes it, because a half-provisioned bare makes the _next_ attempt fail with `overlay already exists` and hides the original error. And `--force` covers untracked collisions only: a colliding path the host repo tracks has an owner upstream, so restoring an overlay over it would destroy committed content.
+Two more properties keep a wrong invocation cheap to undo. A clone that fails anywhere after creating the bare removes it, because a half-provisioned bare makes the _next_ attempt fail with `overlay already exists` and hides the original error. And `--force` covers untracked collisions only: a colliding path the host repo tracks has an owner upstream, so restoring an overlay over it would destroy committed content. A collision is judged by content: a regular file that already hashes to the overlay's blob is not counted, so a copy made by hand does not demand `--force`, which would then also cover every file that differs.
+
+#### Default remote
+
+`attic clone` with no URL resolves the remote in this order: the global `mono.remote` in `~/.config/attic/config.toml`, then the one mono remote this machine's existing overlays already point at. Either source implies `--mono`, since both name a mono remote by construction. The config layer comes first because it is the only one a fresh machine has: before this, the first clone on every new machine needed the full URL. The first mono `init` or `clone` writes `mono.remote` when it is unset and never replaces an existing value. `attic labels` resolves its remote through the same fallback.
+
+The URL stays in machine config rather than anywhere in the host repo. The host `.gitignore` already carries a committed attic block, and recording the remote there would have made a fresh checkout self-describing, but a public host repo would then publish where its private overlay lives. That block is still used as a signal: with no overlay on the machine and a non-empty block, the no-overlay error names `attic clone` instead of `attic init`.
+
+`init --mono-remote` checks the other direction. If `repo/<fp>` already exists on the remote, init refuses and names `clone`, because a second machine running init starts an unrelated history and learns that only when its first push is rejected. `--unrelated` keeps the deliberate case, the [two-machine bootstrap](two-machine-bootstrap.md) merge, working. An unreachable remote is not a refusal; init has always worked offline. A failed init removes the bare it created, as a failed clone does.
 
 #### Fetch scope
 
